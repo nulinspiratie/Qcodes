@@ -21,31 +21,31 @@ class AWGChannel(InstrumentChannel):
 
         # TODO: Joint amplitude and offset validation (-1.5<amp+offset<1.5)
         self.add_parameter('amplitude',
-                           label=f'ch{self.id} amplitude',
+                           label=f'{self.name} amplitude',
                            unit='V',
                            set_function=self.awg.channelAmplitude,
-                           docstring=f'ch{self.id} amplitude',
+                           docstring=f'{self.name} amplitude',
                            vals=vals.Numbers(-1.5, 1.5))
         self.add_parameter('offset',
-                           label=f'ch{self.id} offset',
+                           label=f'{self.name} offset',
                            unit='V',
                            set_function=self.awg.channelOffset,
-                           docstring=f'The DC offset of ch{self.id}',
+                           docstring=f'The DC offset of {self.name}',
                            vals=vals.Numbers(-1.5, 1.5))
 
         self.add_parameter('wave_shape',
-                           label=f'ch{self.id} wave shape',
+                           label=f'{self.name} wave shape',
                            initial_value='arbitrary',
                            set_function=self.awg.channelWaveShape,
                            val_mapping={'HiZ': -1, 'none': 0, 'sinusoidal': 1,
                                         'triangular': 2, 'square': 4, 'dc': 5,
                                         'arbitrary': 6, 'partner_channel': 8},
-                           docstring=f'The output waveform type of ch{self.id}. '
+                           docstring=f'The output waveform type of {self.name}. '
                                      f'Can be either arbitrary (AWG), or one '
                                      f'of the function generator types.')
 
         self.add_parameter('trigger_source',
-                           label=f'ch{self.id} trigger source',
+                           label=f'{self.name} trigger source',
                            val_mapping={'trig_in': 0,
                                         **{f'pxi{k}': 4000+k for k in range(8)}},
                            initial_value='trig_in',
@@ -58,7 +58,7 @@ class AWGChannel(InstrumentChannel):
                                      'trigger_direction == "in".')
 
         self.add_parameter('trigger_mode',
-                           label=f'ch{self.id} trigger mode',
+                           label=f'{self.name} trigger mode',
                            initial_value='rising',
                            val_mapping={'active_high': 1, 'active_low': 2,
                                         'rising': 3, 'falling': 4},
@@ -75,31 +75,31 @@ class AWGChannel(InstrumentChannel):
 
         # Function generator parameters
         self.add_parameter(f'frequency',
-                           label=f'ch{self.id} frequency',
+                           label=f'{self.name} frequency',
                            unit='Hz',
                            set_function=self.awg.channelFrequency,
-                           docstring=f'The frequency of ch{self.id}, only used '
+                           docstring=f'The frequency of {self.name}, only used '
                                      f'for the function generator (wave_shape '
                                      f'is not arbitrary).',
                            vals=vals.Numbers(0, 200e6))
         self.add_parameter(f'phase',
-                           label=f'ch{self.id} phase',
+                           label=f'{self.name} phase',
                            unit='deg',
                            set_function=self.awg.channelPhase,
-                           docstring=f'The phase of ch{self.id}, only used '
+                           docstring=f'The phase of {self.name}, only used '
                                      f'for the function generator (wave_shape '
                                      f'is not arbitrary).',
                            vals=vals.Numbers(0, 360))
         self.add_parameter(f'IQ',
-                           label=f'ch{self.id} IQ modulation',
+                           label=f'{self.name} IQ modulation',
                            val_mapping={'on': 1, 'off': 0},
                            set_function=self.awg.modulationIQconfig,
                            docstring=f'Enable or disable IQ modulation for '
-                                     f'ch{self.id}. If enabled, IQ modulation '
+                                     f'{self.name}. If enabled, IQ modulation '
                                      f'will be applied to the function '
                                      f'generator signal using the AWG.')
         self.add_parameter(f'angle_modulation',
-                           label=f'ch{self.id} angle modulation',
+                           label=f'{self.name} angle modulation',
                            val_mapping={'none': 0, 'frequency': 1, 'phase': 2},
                            set_function=self.awg.modulationAngleConfig,
                            set_args=['angle_modulation', 'deviation_gain'],
@@ -107,7 +107,7 @@ class AWGChannel(InstrumentChannel):
                                      f'function generator. Can be frequency or '
                                      f'phase.')
         self.add_parameter(f'deviation_gain',
-                           label=f'ch{self.id} angle modulation',
+                           label=f'{self.name} angle modulation',
                            vals=vals.Numbers(),
                            set_function=self.awg.modulationAngleConfig,
                            initial_value=0,
