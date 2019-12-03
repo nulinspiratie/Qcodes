@@ -1,5 +1,5 @@
 import sys
-from IPython.core.magic import Magics, magics_class, line_cell_magic
+from IPython.core.magic import Magics, magics_class, line_cell_magic, needs_local_scope
 from IPython import get_ipython
 
 if sys.version_info < (3, 6):
@@ -14,6 +14,7 @@ class QCoDeSMagic(Magics):
         self._knowntemps = set()
         super(QCoDeSMagic, self).__init__(*args, **kwargs)
 
+    @needs_local_scope
     @line_cell_magic
     def measurement(self, line, cell=None):
         """
@@ -87,7 +88,12 @@ class QCoDeSMagic(Magics):
         lines = cell.splitlines()
         assert lines[0][:3] == 'for', "Measurement must start with for loop"
 
-        contents = 'import qcodes\n{} = '.format(loop_name)
+        # Perform initial import
+        import_code = 'import qcodes'
+        contents = [import_code]
+
+        loop_code = f'{loop_name} = '
+
         previous_level = 0
         for k, line in enumerate(lines):
             line, level = line.lstrip(), int((len(line)-len(line.lstrip())) / 4)
@@ -106,27 +112,25 @@ class QCoDeSMagic(Magics):
                     line_representation += '\n' + ' ' * level * 4
 
                 if line[:3] == 'for':
+                    assert line.endswith(':'), "For loop line should end with colon"
                     # New loop
                     for_opts, for_code = self.parse_options(line[4:-1], 'd:')
-                    if 'd' in for_opts:
-                        # Delay option provided
-                        line_representation += ('qcodes.Loop({}, '
-                                                'delay={}).each(\n'
-                                                ''.format(for_code,
-                                                          for_opts["d"]))
-                    else:
-                        line_representation += ('qcodes.Loop({}).each(\n'
-                                                ''.format(for_code))
+                    if 'd' in for_opts:  # Delay option provided
+                        for_code += f', delay={for_opts["d"]}'
+
+                    line_representation += f'qcodes.Loop({for_code}).each(\n'
                 else:
                     # Action in current loop
-                    line_representation += '{},\n'.format(line)
-                contents += line_representation
+                    line_representation += f'{line},\n'
+                loop_code += line_representation
 
                 # Remember level for next iteration (might exit inner loop)
                 previous_level = level
 
         # Add closing brackets for any remaining loops
-        contents += ')' * previous_level + '\n'
+        loop_code += ')' * previous_level + '\n'
+
+        contents.append(loop_code)
 
         if '{' in msmt_name:
             # msmt_name contains code to be executed (withing {} braces).
@@ -135,7 +139,7 @@ class QCoDeSMagic(Magics):
             # Could occur if msmt_name contains reference to loop
 
             # Execute loop since msmt_name code may refer to it
-            exec(contents, self.shell.user_ns)
+            exec(contents)
             import re
             keys = re.findall(r"\{([A-Za-z0-9\[\]\(\)\*.+-_]+)\}", msmt_name)
             for key in keys:
@@ -147,8 +151,10 @@ class QCoDeSMagic(Magics):
                     val = eval(key, self.shell.user_ns)
                 msmt_name = msmt_name.replace(f'{{{key}}}', str(val), 1)
 
+
+
         # Add dataset
-        contents += f"{data_name} = {loop_name}.get_data_set(name='{msmt_name}')"
+        contents.append(f"{data_name} = {loop_name}.get_data_set(name='{msmt_name}')")
         if 's' not in options:
             contents += f"\nprint({data_name})"
 
@@ -164,6 +170,7 @@ class QCoDeSMagic(Magics):
         if 'x' not in options:
             # Execute contents
             self.shell.run_cell(contents, store_history=True, silent=True)
+            self.shell.run_cell(f'')
 
 
 def register_magic_class(cls=QCoDeSMagic, magic_commands=True):
