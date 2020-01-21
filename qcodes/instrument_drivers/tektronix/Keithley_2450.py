@@ -60,16 +60,18 @@ class Keithley_2450(VisaInstrument):
                            are collected and is hence slower.')
 
         self.add_parameter('average_state',
-                           val_mapping={'ON': 1, 'OFF': 0},
                            get_cmd=self._get_average_state,
                            set_cmd=self._set_average_state,
+                           set_parser=int,
+                           get_parser=int,
                            label='Average state',
                            docstring='The state of averaging for a measurement, either on or off.')
 
         self.add_parameter('sense_range_auto',
-                           val_mapping={'ON': 1, 'OFF': 0},
                            get_cmd=self._get_sense_range_auto,
                            set_cmd=self._set_sense_range_auto,
+                           set_parser=int,
+                           get_parser=int,
                            label='Sense range auto mode',
                            docstring='This determines if the range for measurements is selected manually \
                            (OFF), or automatically (ON).')
@@ -127,16 +129,18 @@ class Keithley_2450(VisaInstrument):
                            docstring='This specifies an internal offset that can be applied to measured data')
 
         self.add_parameter('relative_offset_state',
-                           val_mapping={'ON': 1, 'OFF': 0},
                            get_cmd=self._get_relative_offset_state,
                            set_cmd=self._set_relative_offset_state,
+                           get_parser=int,
+                           set_parser=int,
                            label='Relative offset state',
                            docstring='This determines if the relative offset is to be applied to measurements.')
 
         self.add_parameter('four_W_mode',
-                           val_mapping={'ON': 1, 'OFF': 0},
                            get_cmd=self._get_four_wire_mode,
                            set_cmd=self._set_four_wire_mode,
+                           get_parser=int,
+                           set_parser=int,
                            label='Four-wire sensing state',
                            docstring='This determines whether you sense in two-wire (OFF) or \
                            four-wire mode (ON)')
@@ -154,14 +158,16 @@ class Keithley_2450(VisaInstrument):
                            get_cmd=self._get_source_level,
                            set_cmd=self._set_source_level,
                            get_parser=float,
+                           get_parser=float,
                            set_parser=float,
                            label='Source level',
                            docstring='This sets/reads the output voltage or current level of the source.')
 
         self.add_parameter('output_state',
-                           val_mapping={'ON': 1, 'OFF': 0},
                            set_cmd=':OUTP:STAT {:d}',
                            get_cmd=':OUTP:STAT?',
+                           set_parser=int,
+                           get_parser=int,
                            label='Output state',
                            docstring='Determines whether output is ON or OFF.')
 
@@ -175,8 +181,8 @@ class Keithley_2450(VisaInstrument):
                            docstring='The current (voltage) limit when sourcing voltage (current).')
 
         self.add_parameter('source_limit_tripped',
-                           val_mapping={'YES': 1, 'NO': 0},
                            get_cmd=self._get_source_limit_tripped,
+                           get_parser=int,
                            label='The trip state of the source limit.',
                            docstring='This reads if the source limit has been tripped during a measurement.')
 
@@ -188,17 +194,19 @@ class Keithley_2450(VisaInstrument):
                            docstring='The voltage (current) output range when sourcing a voltage (current).')
 
         self.add_parameter('source_range_auto',
-                           val_mapping={'ON': 1, 'OFF': 0},
                            get_cmd=self._get_source_range_auto,
                            set_cmd=self._set_source_range_auto,
+                           set_parser=int,
+                           get_parser=int,
                            label='Source range auto mode',
                            docstring='Determines if the range for sourcing is selected manually (OFF), \
                                      or automatically (ON).')
 
         self.add_parameter('source_read_back',
-                           val_mapping={'ON': 1, 'OFF': 0},
                            get_cmd=self._get_source_read_back,
                            set_cmd=self._set_source_read_back,
+                           set_parser=int,
+                           get_parser=int,
                            label='Source read-back',
                            docstring='This determines whether the recorded output is the measured source value \
                            or the configured source value. The former increases the precision, \
@@ -215,9 +223,10 @@ class Keithley_2450(VisaInstrument):
                            being recorded.')
 
         self.add_parameter('source_delay_auto',
-                           val_mapping={'ON': 1, 'OFF': 0},
                            get_cmd=self._get_source_delay_auto_state,
                            set_cmd=self._set_source_delay_auto_state,
+                           set_parser=int,
+                           get_parser=int,
                            label='Source measurement delay auto state',
                            docstring='This determines the autodelay between the source changing and a measurement \
                            being recorded set to state ON/OFF.')
@@ -233,8 +242,8 @@ class Keithley_2450(VisaInstrument):
                            It is in effect when either current or voltage is sourced.')
 
         self.add_parameter('source_overvoltage_protection_tripped',
-                           val_mapping={'True': 1, 'False': 0},
                            get_cmd='SOUR:VOLT:PROT:TRIP?',
+                           get_parser=int,
                            label='Source overvoltage protection tripped status',
                            docstring='If the voltage source does not exceed the set protection limits, the return is 0. \
                            If the voltage source exceeds the set limits, the return is 1.')
