@@ -1,5 +1,5 @@
 from qcodes import VisaInstrument
-from qcodes.utils.validators import Strings, Enum, Ints, MultiType, Numbers
+from qcodes.utils.validators import Enum, Ints, MultiType, Numbers
 
 
 class Keithley_2450(VisaInstrument):
@@ -19,7 +19,7 @@ class Keithley_2450(VisaInstrument):
         self.add_parameter('sense_mode',
                            vals=Enum('VOLT', 'CURR', 'RES'),
                            get_cmd=':SENS:FUNC?',
-                           set_cmd=_set_sense_mode,
+                           set_cmd=self._set_sense_mode,
                            label='Sense mode',
                            docstring='This determines whether a voltage, current or resistance is being sensed.')
 
@@ -149,7 +149,7 @@ class Keithley_2450(VisaInstrument):
         self.add_parameter('source_mode',
                            vals=Enum('VOLT', 'CURR'),
                            get_cmd=':SOUR:FUNC?',
-                           set_cmd=_set_source_mode,
+                           set_cmd=self._set_source_mode,
                            label='Source mode',
                            docstring='This determines whether a voltage or current is being sourced.')
 
@@ -157,7 +157,6 @@ class Keithley_2450(VisaInstrument):
                            vals=Numbers(),
                            get_cmd=self._get_source_level,
                            set_cmd=self._set_source_level,
-                           get_parser=float,
                            get_parser=float,
                            set_parser=float,
                            label='Source level',
