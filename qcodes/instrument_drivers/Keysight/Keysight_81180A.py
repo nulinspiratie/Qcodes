@@ -119,7 +119,7 @@ class AWGChannel(InstrumentChannel):
             set_cmd="FREQUENCY {:.8f}",
             get_parser=float,
             vals=vals.Numbers(10e-3, 250e6),
-            docstring="Set the frequency of standard waveforms",
+            docstring="Set the frequency (Hz) of standard waveforms",
         )
 
         self.add_parameter(
@@ -175,7 +175,7 @@ class AWGChannel(InstrumentChannel):
             set_cmd="POWER {:.8f}",
             get_parser=float,
             vals=vals.Numbers(-5, 5),  # Might be -5 to 5, manual is unclear
-            docstring="Set output power from AC output path (50-ohm matched)",
+            docstring="Set output power (dBm) from AC output path (50-ohm matched)",
         )
 
         self.add_parameter(
@@ -185,7 +185,7 @@ class AWGChannel(InstrumentChannel):
             set_cmd="VOLTAGE:DAC {:.8f}",
             get_parser=float,
             vals=vals.Numbers(50e-3, 2),
-            docstring="Waveform amplitude when routed through the DAC path",
+            docstring="Waveform amplitude (V) when routed through the DAC path",
         )
 
         self.add_parameter(
@@ -195,7 +195,7 @@ class AWGChannel(InstrumentChannel):
             set_cmd="VOLTAGE {:.8f}",
             get_parser=float,
             vals=vals.Numbers(50e-3, 2),
-            docstring="Waveform amplitude when routed through the DC path",
+            docstring="Waveform amplitude (V) when routed through the DC path",
         )
 
         self.add_parameter(
@@ -205,7 +205,7 @@ class AWGChannel(InstrumentChannel):
             set_cmd="VOLTAGE:OFFSET {:.8f}",
             get_parser=float,
             vals=vals.Numbers(-1.5, 1.5),
-            docstring="Voltage offset when routed through DAC or DC path",
+            docstring="Voltage offset (V) when routed through DAC or DC path",
         )
 
         self.add_parameter(
@@ -270,7 +270,7 @@ class AWGChannel(InstrumentChannel):
             get_parser=float,
             unit="s",
             vals=vals.Numbers(100e-9, 20),
-            docstring="Triggering period when in timer trigger mode",
+            docstring="Triggering period (s) when in internal trigger timer mode"
         )
 
         self.add_parameter(
@@ -280,6 +280,7 @@ class AWGChannel(InstrumentChannel):
             get_parser=int,
             unit="1/sample rate",
             vals=vals.Multiples(min_value=152, max_value=8000000, divisor=8),
+            docstring="Delay of the internal trigger generator."
         )
 
         self.add_parameter(
@@ -306,14 +307,17 @@ class AWGChannel(InstrumentChannel):
             get_parser=float,
             unit="1/sample rate",
             vals=vals.Multiples(min_value=0, max_value=8000000, divisor=8),
+            docstring="Delay between receiving an external trigger, and "
+                      "outputting the first waveform"
         )
 
         self.add_parameter(
             "burst_count",
             get_cmd="TRIGGER:COUNT?",
             set_cmd="TRIGGER:COUNT {}",
-            get_parser=float,
-            vals=vals.Ints(1, 1048576),
+            set_parser=int,
+            get_parser=int,
+            vals=vals.Numbers(1, 1048576),
             docstring="Perform number of waveform cycles after trigger.",
         )
 
@@ -361,7 +365,9 @@ class AWGChannel(InstrumentChannel):
             "sequence_once_count",
             get_cmd="SEQUENCE:ONCE:COUNT?",
             set_cmd="SEQUENCE:ONCE:COUNT {}",
-            vals=vals.Ints(1, 1048575),
+            set_parser=int,
+            get_parser=int,
+            vals=vals.Numbers(1, 1048575),
             docstring="Determines the number of times a waveform sequence will"
             "be repeated.",
         )
@@ -530,8 +536,8 @@ class AWGChannel(InstrumentChannel):
             raise NotImplementedError('Currently cannot append list of waveforms '
                                       'to pre-existing list.')
 
-        for k, waveform in enumerate(waveforms):
-            self.upload_waveform(waveform, k+1)  # 1-based indexing
+        for k, waveform in enumerate(waveforms, start=1):  # 1-based indexing
+            self.upload_waveform(waveform, k)
 
     def clear_waveforms(self):
         # Set active channel to current channel if necessary
@@ -722,24 +728,3 @@ class Keysight_81180A(VisaInstrument):
         return {
             key: val[0] / val[1] for key, val in self._operation_complete_timing.items()
         }
-
-    def add_parameter(
-        self,
-        name,
-        parameter_class=Parameter,
-        parent=None,
-        vals=None,
-        val_mapping=None,
-        **kwargs,
-    ):
-        if isinstance(vals, EnumVisa) and val_mapping is None:
-            val_mapping = vals.val_mapping
-
-        return super().add_parameter(
-            name,
-            parameter_class=parameter_class,
-            parent=parent,
-            vals=vals,
-            val_mapping=val_mapping,
-            **kwargs
-        )
