@@ -423,7 +423,7 @@ class Keithley_2450(VisaInstrument):
         elif 'CURR' in mode:
             self.sense_value.unit = 'A'
         elif 'RES' in mode:
-            self.sense_value.unit = u'\u03A9' # unicode upper-case omega
+            self.sense_value.unit = 'Ohm' # unicode upper-case omega is \u03A9
         else:
             raise UserWarning('Unknown sense mode')
         self.write(set_cmd = ':SENS:FUNC "{:s}"'.format(mode))
