@@ -464,6 +464,52 @@ def get_last_input_cells(cells=3):
         logging.warning('No input cells found')
 
 
+def using_ipython() -> bool:
+    """Check if code is run from IPython (including jupyter notebook/lab)"""
+    return hasattr(builtins, '__IPYTHON__')
+
+
+def define_func_from_string(func_name: str, code: str, shell: bool = True):
+    """Define a function from code passed as a string
+
+    If using IPython, the function will be defined as if a cell was executed.
+    Currently the function cannot accept args and/or kwargs as input.
+
+    Args:
+        func_name: Name of function to be defined
+        code: Code to be placed into function
+        shell: Whether to define function through an IPython cell.
+            If IPython is not used or shell=False, the function is defined
+            using exec() in the global namespace
+
+    Returns:
+        Handle to the defined function
+
+    Examples:
+        >>> code = "print('hi')"
+        >>> define_func_from_string('hi_func', code)
+        >>> hi_func()
+        ... hi
+
+    """
+    code_lines = code.split('\n')
+    indented_code_lines = ['    ' + line for line in code_lines]
+    indented_code = '\n'.join(indented_code_lines)
+
+    function_code = f'def {func_name}():\n' + indented_code
+
+    if shell and using_ipython():
+        from IPython import get_ipython
+        shell = get_ipython()
+        shell.run_cell(function_code, store_history=True, silent=True)
+
+        return eval(func_name, shell.user_global_ns)
+    else:
+        exec(function_code, globals())
+
+        return eval(func_name, globals())
+
+
 def foreground_qt_window(window):
     """
     Try as hard as possible to bring a qt window to the front. This
