@@ -4,12 +4,16 @@ from typing import List, Tuple, Union, Sequence, Dict, Any, Callable
 import threading
 from time import sleep
 
-from qcodes.data.data_set import new_data
+from qcodes.data.data_set import new_data, DataSet
 from qcodes.data.data_array import DataArray
 from qcodes.instrument.sweep_values import SweepValues
 from qcodes.instrument.parameter import Parameter, MultiParameter
 from qcodes.instrument.parameter_node import ParameterNode
-from qcodes.utils.helpers import using_ipython, directly_executed_from_cell
+from qcodes.utils.helpers import (
+    using_ipython,
+    directly_executed_from_cell,
+    get_last_input_cells
+)
 
 
 class Measurement:
@@ -45,7 +49,7 @@ class Measurement:
         self.name = name
 
         # Total dimensionality of loop
-        self.loop_dimensions: Union[Tuple[int], None] = None
+        self.loop_shape: Union[Tuple[int], None] = None
 
         # Current loop indices
         self.loop_indices: Union[Tuple[int], None] = None
@@ -72,6 +76,10 @@ class Measurement:
         else:
             return self._data_groups
 
+    @property
+    def active_action(self):
+        return self.actions.get(self.action_indices, None)
+
     def __enter__(self):
         self.is_context_manager = True
 
@@ -86,9 +94,12 @@ class Measurement:
                 # Initialize dataset
                 self.dataset = new_data(name=self.name)
                 self.dataset.add_metadata({"measurement_type": "Measurement"})
+                self.dataset.active = True
+
+                self._initialize_metadata(self.dataset)
 
                 # Initialize attributes
-                self.loop_dimensions = ()
+                self.loop_shape = ()
                 self.loop_indices = ()
                 self.action_indices = (0,)
                 self.data_arrays = {}
@@ -108,7 +119,7 @@ class Measurement:
                 msmt.action_indices += (0,)
 
                 # Nested measurement attributes should mimic the primary measurement
-                self.loop_dimensions = msmt.loop_dimensions
+                self.loop_shape = msmt.loop_shape
                 self.loop_indices = msmt.loop_indices
                 self.action_indices = msmt.action_indices
                 self.data_arrays = msmt.data_arrays
@@ -145,12 +156,33 @@ class Measurement:
         if msmt is self:
             Measurement.running_measurement = None
             self.dataset.finalize()
+            self.dataset.active = False
         else:
             # This is a nested measurement.
             # update action_indices of primary measurements
             msmt.action_indices = msmt.action_indices[:-1]
 
         self.is_context_manager = False
+
+    def _initialize_metadata(self, dataset: DataSet = None):
+        if dataset is None:
+            dataset = self.dataset
+
+        if using_ipython():
+            measurement_cell = get_last_input_cells(1)[0]
+
+            measurement_code = measurement_cell
+            # If the code is run from a measurement thread, there is some
+            # initial code that should be stripped
+            init_string = "get_ipython().run_cell_magic('new_job', '', "
+            if measurement_code.startswith(init_string):
+                measurement_code = measurement_code[len(init_string)+1:-4]
+
+            dataset.add_metadata({
+                'measurement_cell': measurement_cell,
+                'measurement_code': measurement_code,
+                'last_input_cells': get_last_input_cells(20)
+            })
 
     # Data array functions
     def _create_data_array(
@@ -199,7 +231,7 @@ class Measurement:
         array_kwargs = {
             "is_setpoint": is_setpoint,
             "action_indices": action_indices,
-            "shape": self.loop_dimensions,
+            "shape": self.loop_shape,
         }
 
         if is_setpoint or isinstance(result, (np.ndarray, list)):
@@ -271,6 +303,8 @@ class Measurement:
                 set_arrays.append(set_array)
 
         return tuple(set_arrays)
+
+    # def _add_data_group(self, data_group):
 
     def get_arrays(self, action_indices: Sequence[int] = None) -> List[DataArray]:
         """Get all arrays belonging to the current action indices
@@ -561,9 +595,7 @@ class Measurement:
             )
 
         # Increment last action index by 1
-        action_indices = list(self.action_indices)
-        action_indices[-1] += 1
-        self.action_indices = tuple(action_indices)
+        self.skip()
 
         return result
 
@@ -578,6 +610,27 @@ class Measurement:
 
     def stop(self):
         self.is_stopped = True
+        # Unpause loop
+        self.resume()
+
+    def skip(self, N=1):
+        action_indices = list(self.action_indices)
+        action_indices[-1] += N
+        self.action_indices = tuple(action_indices)
+        return self.action_indices
+
+
+    def exit_loop(self):
+        if Measurement.running_measurement is not self:
+            Measurement.running_measurement.exit_loop()
+        else:
+            self.loop_shape = self.loop_shape[:-1]
+            self.loop_indices = self.loop_indices[:-1]
+
+            # Remove last action index and increment one before that by one
+            action_indices = list(self.action_indices[:-1])
+            action_indices[-1] += 1
+            self.action_indices = tuple(action_indices)
 
 
 def running_measurement() -> Measurement:
@@ -594,7 +647,7 @@ class Sweep:
         self.unit = unit
 
         self.sequence = sequence
-        self.dimension = len(running_measurement().loop_dimensions)
+        self.dimension = len(running_measurement().loop_shape)
         self.loop_index = None
         self.iterator = None
 
@@ -612,7 +665,7 @@ class Sweep:
                 "is already running in a different thread."
             )
 
-        running_measurement().loop_dimensions += (len(self.sequence),)
+        running_measurement().loop_shape += (len(self.sequence),)
         running_measurement().loop_indices += (0,)
         running_measurement().action_indices += (0,)
 
@@ -650,13 +703,7 @@ class Sweep:
             action_indices[-1] = 0
             msmt.action_indices = tuple(action_indices)
         except StopIteration:  # Reached end of iteration
-            msmt.loop_dimensions = msmt.loop_dimensions[:-1]
-            msmt.loop_indices = msmt.loop_indices[:-1]
-
-            # Remove last action index and increment one before that by one
-            action_indices = list(msmt.action_indices[:-1])
-            action_indices[-1] += 1
-            msmt.action_indices = tuple(action_indices)
+            msmt.exit_loop()
             raise StopIteration
 
         if isinstance(self.sequence, SweepValues):
