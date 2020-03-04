@@ -1,4 +1,6 @@
 from qcodes import VisaInstrument
+from qcodes.instrument.parameter_node import parameter
+from qcodes.instrument.parameter import Parameter
 from qcodes.utils.validators import Strings, Enum, Ints, MultiType, Numbers
 
 
@@ -16,12 +18,16 @@ class Keithley_2450(VisaInstrument):
         super().__init__(name, address, terminator='\n', **kwargs)
 
         ### Sense parameters ###
+        self.voltage = Parameter(get_parser=float)
+
         self.add_parameter('sense_mode',
                            vals=Enum('VOLT', 'CURR', 'RES'),
                            get_cmd=':SENS:FUNC?',
                            set_cmd=':SENS:FUNC "{:s}"',
                            label='Sense mode',
-                           docstring='This determines whether a voltage, current or resistance is being sensed.')
+                           docstring='This determines whether a voltage, current or resistance is being sensed.',
+                           max_val_age=100
+                           )
 
         self.add_parameter('sense_value',
                            vals=Numbers(),
@@ -263,6 +269,12 @@ class Keithley_2450(VisaInstrument):
         #                    label='Relative time of measurement',
         #                    unit='s')
 
+    @parameter
+    def voltage_get(self, parameter):
+        if self.sense_mode.get_latest() != '"VOLT:DC"':
+            self.sense_mode("VOLT")
+
+        return self.sense_value()
 
     ### Functions ###
     def reset(self):
