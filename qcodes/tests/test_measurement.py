@@ -88,7 +88,7 @@ class TestNewLoop(TestCase):
         with Measurement("new_loop_1D") as msmt:
             for k, val in enumerate(Sweep(self.p_sweep.sweep(0, 1, 0.1))):
                 arr = arrs.setdefault(
-                    msmt.action_indices, np.zeros(msmt.loop_dimensions)
+                    msmt.action_indices, np.zeros(msmt.loop_shape)
                 )
                 arr[k] = msmt.measure(self.p_measure)
 
@@ -104,12 +104,12 @@ class TestNewLoop(TestCase):
         with Measurement("new_loop_1D_double") as msmt:
             for k, val in enumerate(Sweep(self.p_sweep.sweep(0, 1, 0.1))):
                 arr = arrs.setdefault(
-                    msmt.action_indices, np.zeros(msmt.loop_dimensions)
+                    msmt.action_indices, np.zeros(msmt.loop_shape)
                 )
                 arr[k] = msmt.measure(self.p_measure)
 
                 arr = arrs.setdefault(
-                    msmt.action_indices, np.zeros(msmt.loop_dimensions)
+                    msmt.action_indices, np.zeros(msmt.loop_shape)
                 )
                 arr[k] = msmt.measure(self.p_measure)
 
@@ -122,18 +122,68 @@ class TestNewLoop(TestCase):
         with Measurement("new_loop_1D_double") as msmt:
             for k, val in enumerate(Sweep(self.p_sweep2.sweep(0, 1, 0.1))):
                 for kk, val2 in enumerate(Sweep(self.p_sweep.sweep(0, 1, 0.1))):
-                    self.assertEqual(msmt.loop_dimensions, (11, 11))
+                    self.assertEqual(msmt.loop_shape, (11, 11))
                     arr = arrs.setdefault(
-                        msmt.action_indices, np.zeros(msmt.loop_dimensions)
+                        msmt.action_indices, np.zeros(msmt.loop_shape)
                     )
                     arr[k, kk] = msmt.measure(self.p_measure)
 
         verify_msmt(msmt, arrs)
 
+    def test_new_loop_dual_sweep(self):
+        with Measurement('outer') as msmt:
+            self.assertEqual(msmt.action_indices, (0,))
+            for _ in Sweep(range(10), 'sweep0'):
+                self.assertEqual(msmt.action_indices, (0, 0))
+                for _ in Sweep(range(10), 'sweep1'):
+                    self.assertEqual(msmt.action_indices, (0, 0, 0))
+                    msmt.measure(np.random.rand(), 'random_value1')
+                self.assertEqual(msmt.action_indices, (0, 1))
+                for _ in Sweep(range(10), 'sweep2'):
+                    self.assertEqual(msmt.action_indices, (0, 1, 0))
+                    msmt.measure(np.random.rand(), 'random_value2')
+
+    def test_new_loop_break(self):
+        arrs = {}
+        self.p_sweep2 = Parameter("p_sweep2", set_cmd=None)
+
+        with Measurement("new_loop_1D_double") as msmt:
+            for k, val in enumerate(Sweep(self.p_sweep2.sweep(0, 1, 0.2))):
+                for kk, val2 in enumerate(Sweep(self.p_sweep.sweep(0, 1, 0.2))):
+                    self.assertEqual(msmt.loop_shape, (6, 6))
+                    arr = arrs.setdefault(
+                        msmt.action_indices, np.nan * np.zeros(msmt.loop_shape)
+                    )
+                    arr[k, kk] = msmt.measure(self.p_measure)
+                    if kk == 2:
+                        msmt.step_out(reduce_dimension=True)
+                        break
+                print('hi')
+
+        verify_msmt(msmt, arrs, allow_nan=True)
+
+    def test_skip_action(self):
+        with Measurement('test') as msmt:
+            for k in Sweep(range(5), 'sweeper'):
+                msmt.measure(k, 'idx')
+                if k % 2:
+                    msmt.measure(2*k, 'double_idx')
+                else:
+                    msmt.skip()
+                msmt.measure(3*k, 'triple_idx')
+
+        arrs = {
+            (0, 0): np.arange(5),
+            (0, 1): [np.nan, 2, np.nan, 6, np.nan],
+            (0, 2): 3 * np.arange(5)
+        }
+
+        verify_msmt(msmt, arrs, allow_nan=True)
+
     # def test_new_loop_0D(self):
     #     # TODO Does not work yet
     #     with Measurement('new_loop_0D') as msmt:
-    #         self.assertEqual(msmt.loop_dimensions, ())
+    #         self.assertEqual(msmt.loop_shape, ())
     #         msmt.measure(self.p_measure)
 
     # self.verify_msmt(msmt, arrs)
@@ -155,7 +205,7 @@ class TestNewLoopParameterNode(TestCase):
 
                 # Save results to verification arrays
                 for kk, result in enumerate(results.values()):
-                    arrs.setdefault((0, 0, kk), np.zeros(msmt.loop_dimensions))
+                    arrs.setdefault((0, 0, kk), np.zeros(msmt.loop_shape))
                     arrs[(0, 0, kk)][k] = result
 
     class NestedResultsNode(ParameterNode):
@@ -183,7 +233,7 @@ class TestNewLoopParameterNode(TestCase):
 
                 # Save results to verification arrays
                 for kk, result in enumerate(node.results.values()):
-                    arrs.setdefault((0, 0, kk), np.zeros(msmt.loop_dimensions))
+                    arrs.setdefault((0, 0, kk), np.zeros(msmt.loop_shape))
                     arrs[(0, 0, kk)][k] = result
 
         verify_msmt(msmt, arrs)
@@ -203,7 +253,7 @@ class TestNewLoopFunctionResults(TestCase):
 
                 # Save results to verification arrays
                 for kk, result in enumerate(results.values()):
-                    arrs.setdefault((0, 0, kk), np.zeros(msmt.loop_dimensions))
+                    arrs.setdefault((0, 0, kk), np.zeros(msmt.loop_shape))
                     arrs[(0, 0, kk)][k] = result
 
         self.assertEqual(msmt.data_groups[(0,0)].name, 'dict_function')
@@ -220,7 +270,7 @@ class TestNewLoopFunctionResults(TestCase):
 
                 # Save results to verification arrays
                 for kk, result in enumerate(results.values()):
-                    arrs.setdefault((0, 0, kk), np.zeros(msmt.loop_dimensions))
+                    arrs.setdefault((0, 0, kk), np.zeros(msmt.loop_shape))
                     arrs[(0, 0, kk)][k] = result
 
         self.assertEqual(msmt.data_groups[(0,0)].name, 'custom_name')
@@ -246,7 +296,7 @@ class TestNewLoopFunctionResults(TestCase):
 
                 # Save results to verification arrays
                 for kk, result in enumerate(results.values()):
-                    arrs.setdefault((0, 0, kk), np.zeros(msmt.loop_dimensions))
+                    arrs.setdefault((0, 0, kk), np.zeros(msmt.loop_shape))
                     arrs[(0, 0, kk)][k] = result
 
         self.assertEqual(msmt.data_groups[(0,0)].name, 'nested_function_name')
@@ -266,7 +316,7 @@ class TestNewLoopArray(TestCase):
         with Measurement("new_loop_parameter_array") as msmt:
             for k, val in enumerate(Sweep(self.p_sweep.sweep(0, 1, 0.1))):
                 arr = arrs.setdefault(
-                    msmt.action_indices, np.zeros(msmt.loop_dimensions + (5,))
+                    msmt.action_indices, np.zeros(msmt.loop_shape + (5,))
                 )
                 result = msmt.measure(p_measure)
                 arr[k] = result
@@ -287,7 +337,7 @@ class TestNewLoopArray(TestCase):
         with Measurement("new_loop_parameter_array_2D") as msmt:
             for k, val in enumerate(Sweep(self.p_sweep.sweep(0, 1, 0.1))):
                 arr = arrs.setdefault(
-                    msmt.action_indices, np.zeros(msmt.loop_dimensions + (5, 12))
+                    msmt.action_indices, np.zeros(msmt.loop_shape + (5, 12))
                 )
                 result = msmt.measure(p_measure)
                 arr[k] = result
@@ -324,7 +374,7 @@ class TestNewLoopArray(TestCase):
 
                 # Save results to verification arrays
                 for kk, result in enumerate(results.values()):
-                    shape = msmt.loop_dimensions
+                    shape = msmt.loop_shape
                     if isinstance(result, np.ndarray):
                         shape += result.shape
                     arrs.setdefault((0, 0, kk), np.zeros(shape))
@@ -374,8 +424,6 @@ class TestNewLoopNesting(TestCase):
 
         self.assertEqual(msmt.data_groups[(1,)], nested_msmt)
 
-        print(msmt.dataset)
-
     def test_double_nest_measurement(self):
         def nest_measurement():
             self.assertEqual(running_measurement().action_indices, (1,))
@@ -407,7 +455,23 @@ class TestNewLoopNesting(TestCase):
         self.assertEqual(msmt.data_groups[(1,)], nested_msmt)
         self.assertEqual(msmt.data_groups[(1, 0, 0)], inner_nested_msmt)
 
-        print(msmt.dataset)
+    def test_new_loop_two_nests(self):
+        with Measurement('outer') as msmt:
+            self.assertEqual(msmt.action_indices, (0,))
+            for _ in Sweep(range(10), 'sweep0'):
+                self.assertEqual(msmt.action_indices, (0, 0))
+                with Measurement('inner1') as msmt_inner:
+                    self.assertEqual(msmt.action_indices, (0, 0, 0))
+                    for _ in Sweep(range(10), 'sweep1'):
+                        self.assertEqual(msmt.action_indices, (0, 0, 0, 0))
+                        msmt.measure(np.random.rand(), 'random_value1')
+                    self.assertEqual(msmt.action_indices, (0, 0, 1))
+                self.assertEqual(msmt.action_indices, (0, 1))
+                with Measurement('inner2') as msmt_inner:
+                    self.assertEqual(msmt.action_indices, (0, 1, 0))
+                    for _ in Sweep(range(10), 'sweep2'):
+                        self.assertEqual(msmt.action_indices, (0, 1, 0, 0))
+                        msmt.measure(np.random.rand(), 'random_value2')
 
 
 class TestMeasurementThread(TestCase):
@@ -429,6 +493,7 @@ class TestMeasurementThread(TestCase):
         with self.assertRaises(RuntimeError):
             with Measurement('new_measurement') as msmt:
                 print('This line will never be reached')
+                self.assertEqual(0, 1)
 
         running_measurement().resume()
         job.join()
@@ -492,7 +557,7 @@ class TestVerifyActions(TestCase):
     def test_simple_measurement_verification_error(self):
         with self.assertRaises(RuntimeError):
             with Measurement('test_simple_measurement_verification_error') as msmt:
-                for k, _ in enumerate(Sweep(range(10), 'sweep_param')):
+                for k, val in enumerate(Sweep(range(10), 'sweep_param')):
                     if k < 7:
                         msmt.measure(val + 2, 'msmt_param')
                     else:
