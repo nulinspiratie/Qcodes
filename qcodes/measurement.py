@@ -204,7 +204,8 @@ class Measurement:
         dataset.add_metadata({"measurement_type": "Measurement"})
 
         # Add instrument information
-        dataset.add_metadata({'station': Station.default.snapshot()})
+        if Station.default is not None:
+            dataset.add_metadata({'station': Station.default.snapshot()})
 
         if using_ipython():
             measurement_cell = get_last_input_cells(1)[0]
