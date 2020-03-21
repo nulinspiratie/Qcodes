@@ -16,7 +16,7 @@ from qcodes.instrument.parameter_node import ParameterNode
 from qcodes.utils.helpers import (
     using_ipython,
     directly_executed_from_cell,
-    get_last_input_cells
+    get_last_input_cells,
 )
 
 
@@ -173,8 +173,8 @@ class Measurement:
                 final_action()
             except Exception as e:
                 logger.error(
-                    f'Could not execute final action {final_action} \n'
-                    f'{traceback.format_exc()}'
+                    f"Could not execute final action {final_action} \n"
+                    f"{traceback.format_exc()}"
                 )
         if msmt is self:
             # Also perform global final actions
@@ -184,8 +184,8 @@ class Measurement:
                     final_action()
                 except Exception as e:
                     logger.error(
-                        f'Could not execute final action {final_action} \n'
-                        f'{traceback.format_exc()}'
+                        f"Could not execute final action {final_action} \n"
+                        f"{traceback.format_exc()}"
                     )
 
             Measurement.running_measurement = None
@@ -205,7 +205,7 @@ class Measurement:
 
         # Add instrument information
         if Station.default is not None:
-            dataset.add_metadata({'station': Station.default.snapshot()})
+            dataset.add_metadata({"station": Station.default.snapshot()})
 
         if using_ipython():
             measurement_cell = get_last_input_cells(1)[0]
@@ -215,13 +215,15 @@ class Measurement:
             # initial code that should be stripped
             init_string = "get_ipython().run_cell_magic('new_job', '', "
             if measurement_code.startswith(init_string):
-                measurement_code = measurement_code[len(init_string)+1:-4]
+                measurement_code = measurement_code[len(init_string) + 1 : -4]
 
-            dataset.add_metadata({
-                'measurement_cell': measurement_cell,
-                'measurement_code': measurement_code,
-                'last_input_cells': get_last_input_cells(20)
-            })
+            dataset.add_metadata(
+                {
+                    "measurement_cell": measurement_cell,
+                    "measurement_code": measurement_code,
+                    "last_input_cells": get_last_input_cells(20),
+                }
+            )
 
     # Data array functions
     def _create_data_array(
@@ -384,8 +386,8 @@ class Measurement:
                 self.action_names[self.action_indices] = name
         elif name != self.action_names[self.action_indices]:
             raise RuntimeError(
-                f'Wrong measurement at action_indices {self.action_indices}. '
-                f'Expected: {self.action_names[self.action_indices]}. Received: {name}'
+                f"Wrong measurement at action_indices {self.action_indices}. "
+                f"Expected: {self.action_names[self.action_indices]}. Received: {name}"
             )
 
     def _add_measurement_result(
@@ -482,9 +484,7 @@ class Measurement:
 
         results_list = multi_parameter(**kwargs)
 
-        results = {
-            name: result for name, result in zip(multi_parameter.names, results_list)
-        }
+        results = dict(zip(multi_parameter.names, results_list))
 
         if name is None:
             name = multi_parameter.name
@@ -511,9 +511,7 @@ class Measurement:
             elif hasattr(callable, "__name__"):
                 name = callable.__name__
             else:
-                action_indices_str = "_".join(
-                    str(idx) for idx in self.action_indices
-                )
+                action_indices_str = "_".join(str(idx) for idx in self.action_indices)
                 name = f"data_group_{action_indices_str}"
 
         # Ensure measuring callable matches the current action_indices
@@ -529,10 +527,7 @@ class Measurement:
         # has loop indices corresponding to the current ones.
         msmt = Measurement.running_measurement
         data_group = msmt.data_groups.get(action_indices)
-        if getattr(data_group, "loop_indices", None) == self.loop_indices:
-            # Measurement has already been performed by a nested measurement
-            return results
-        else:
+        if getattr(data_group, "loop_indices", None) != self.loop_indices:
             # No nested measurement has been performed in the callable.
             # Add results, which should be dict, by creating a nested measurement
             if not isinstance(results, dict):
@@ -544,9 +539,22 @@ class Measurement:
 
         return results
 
+    def _measure_dict(self, value: dict, name: str):
+        if not isinstance(value, dict):
+            raise SyntaxError(f"{name} must be a dict, not {value}")
+
+        # Ensure measuring callable matches the current action_indices
+        self._verify_action(action=None, name=name, add_if_new=True)
+
+        with Measurement(name) as msmt:
+            for key, val in value.items():
+                msmt.measure(val, name=key)
+
+        return value
+
     def _measure_value(self, value, name):
         if name is None:
-            raise RuntimeError('Must provide a name when measuring a value')
+            raise RuntimeError("Must provide a name when measuring a value")
 
         # Ensure measuring callable matches the current action_indices
         self._verify_action(action=None, name=name, add_if_new=True)
@@ -564,11 +572,11 @@ class Measurement:
 
     def measure(
         self,
-        measurable: Union[Parameter, Callable, float, int, bool, np.ndarray],
+        measurable: Union[Parameter, Callable, dict, float, int, bool, np.ndarray],
         name=None,
         label=None,
         unit=None,
-            **kwargs
+        **kwargs,
     ):
         """Perform a single measurement of a Parameter, function, etc.
 
@@ -624,13 +632,15 @@ class Measurement:
         elif isinstance(measurable, MultiParameter):
             result = self._measure_multi_parameter(measurable, name=name, **kwargs)
         elif callable(measurable):
-            result = self._measure_callable(measurable, name=name, **kwargs)
+            result = (self._measure_callable(measurable, name=name, **kwargs),)
+        elif isinstance(measurable, dict):
+            result = self._measure_dict(measurable, name=name)
         elif isinstance(measurable, (float, int, bool, np.ndarray)):
             result = self._measure_value(measurable, name=name)
         else:
             raise RuntimeError(
                 f"Cannot measure {measurable} as it cannot be called, and it "
-                f"is not an int, float, bool, or numpy array."
+                f"is not a dict, int, float, bool, or numpy array."
             )
 
         # Increment last action index by 1
@@ -679,7 +689,6 @@ class Measurement:
 
         return original_value
 
-
     # Functions relating to measurement flow
     def pause(self):
         """Pause measurement at start of next parameter sweep/measurement"""
@@ -705,7 +714,6 @@ class Measurement:
         action_indices[-1] -= N
         self.action_indices = tuple(action_indices)
         return self.action_indices
-
 
     def step_out(self, reduce_dimension=True):
         if Measurement.running_measurement is not self:
