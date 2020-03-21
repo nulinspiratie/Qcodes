@@ -651,7 +651,8 @@ class Measurement:
 
         return result
 
-    def mask_attr(self, obj: object, attr: str, value):
+    # Methods related to masking of parameters/attributes/keys
+    def _mask_attr(self, obj: object, attr: str, value):
         """Temporarily override an object attribute during the measurement.
 
         The value will be reset at the end of the measurement
@@ -672,7 +673,7 @@ class Measurement:
 
         return original_value
 
-    def mask_parameter(self, param, value):
+    def _mask_parameter(self, param, value):
         """Temporarily override a parameter value during the measurement.
 
         The value will be reset at the end of the measurement.
@@ -691,6 +692,36 @@ class Measurement:
         self.final_actions.append(partial(param, original_value))
 
         return original_value
+
+    def _mask_key(self, obj: dict, key: str, value):
+        """Temporarily override a dictionary key during the measurement.
+
+        The value will be reset at the end of the measurement
+        This can also be a nested measurement.
+
+        Args:
+            obj: dictionary whose value should be masked
+            key: key to be masked
+            val: Masked value
+
+        Returns:
+            original value
+        """
+        original_value = obj[key]
+        obj[key] = value
+
+        self.final_actions.append(partial(obj.update, **{key: original_value}))
+
+        return original_value
+
+    def mask(self, obj: object, val=None, **kwargs):
+        if isinstance(obj, Parameter):
+            assert not kwargs
+            return self._mask_parameter(obj, val)
+        elif isinstance(obj, dict):
+            return [self._mask_key(obj, key, val) for key, val in kwargs.items()]
+        else:
+            return [self._mask_attr(obj, key, val) for key, val in kwargs.items()]
 
     # Functions relating to measurement flow
     def pause(self):
