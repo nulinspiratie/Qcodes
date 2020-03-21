@@ -304,6 +304,36 @@ class TestNewLoopFunctionResults(TestCase):
         verify_msmt(msmt, arrs)
 
 
+class TestNewLoopMeasureDict(TestCase):
+    def test_measure_dict(self):
+        with Measurement('measure_dict') as msmt:
+            for k in Sweep(range(10), 'repetition'):
+                msmt.measure({'a': k, 'b': 2*k}, 'dict_msmt')
+
+        verification_arrays = {
+            (0,0,0): range(10),
+            (0,0,1): 2*np.arange(10)
+        }
+        verify_msmt(msmt, verification_arrays=verification_arrays)
+
+    def test_measure_dict_no_name(self):
+        with Measurement('measure_dict') as msmt:
+            for k in Sweep(range(10), 'repetition'):
+                with self.assertRaises(SyntaxError):
+                    msmt.measure({'a': k, 'b': 2*k})
+
+                msmt.measure({'a': k, 'b': 2*k}, 'dict_msmt')
+
+    def test_measure_dict_wrong_ordering(self):
+        with Measurement('measure_dict') as msmt:
+            for k in Sweep(range(10), 'repetition'):
+                if k < 5:
+                    msmt.measure({'a': k, 'b': 2 * k}, 'first_ordering')
+                else:
+                    with self.assertRaises(RuntimeError):
+                        msmt.measure({'b': k, 'c': 2 * k}, 'second_ordering')
+
+
 class TestNewLoopArray(TestCase):
     def setUp(self) -> None:
         self.p_sweep = Parameter("p_sweep", set_cmd=None, initial_value=10)
@@ -644,3 +674,26 @@ class TestVerifyActions(TestCase):
                     else:
                         msmt.measure(different_f, name='f')
 
+
+class TestMask(TestCase):
+    def test_mask_attr(self):
+        class C:
+            def __init__(self):
+                self.x = 1
+
+        c = C()
+
+        with Measurement('mask_parameter') as msmt:
+            self.assertEqual(c.x, 1)
+            msmt.mask_attr(c, 'x', 2)
+            for k in Sweep(range(10), 'repetition'):
+                msmt.measure({'a': 3, 'b': 4}, 'acquire_values')
+                self.assertEqual(c.x, 2)
+            self.assertEqual(c.x, 2)
+
+        self.assertEqual(c.x, 1)
+
+
+
+    def test_mask_config(self):
+        pass

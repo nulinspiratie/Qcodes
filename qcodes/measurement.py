@@ -543,6 +543,9 @@ class Measurement:
         if not isinstance(value, dict):
             raise SyntaxError(f"{name} must be a dict, not {value}")
 
+        if not isinstance(name, str) or name == '':
+            raise SyntaxError(f'Dict result {name} must have a valid name: {value}')
+
         # Ensure measuring callable matches the current action_indices
         self._verify_action(action=None, name=name, add_if_new=True)
 
