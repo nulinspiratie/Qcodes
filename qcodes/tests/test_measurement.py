@@ -1,11 +1,10 @@
 from time import sleep
-
 import numpy as np
 from unittest import TestCase
 from functools import partial
 
+from qcodes.config.config import DotDict
 from qcodes import Loop, Parameter, load_data, ParameterNode, new_job, MultiParameter
-
 from qcodes.measurement import Measurement, Sweep, running_measurement
 
 
@@ -685,7 +684,7 @@ class TestMask(TestCase):
 
         with Measurement('mask_parameter') as msmt:
             self.assertEqual(c.x, 1)
-            msmt.mask_attr(c, 'x', 2)
+            msmt._mask_attr(c, 'x', 2)
             for k in Sweep(range(10), 'repetition'):
                 msmt.measure({'a': 3, 'b': 4}, 'acquire_values')
                 self.assertEqual(c.x, 2)
@@ -693,7 +692,82 @@ class TestMask(TestCase):
 
         self.assertEqual(c.x, 1)
 
-
-
     def test_mask_config(self):
+        c = DotDict({'x': 1})
+
+        with Measurement('mask_parameter') as msmt:
+            self.assertEqual(c.x, 1)
+            msmt._mask_attr(c, 'x', 2)
+            for k in Sweep(range(10), 'repetition'):
+                msmt.measure({'a': 3, 'b': 4}, 'acquire_values')
+                self.assertEqual(c.x, 2)
+            self.assertEqual(c.x, 2)
+
+        self.assertEqual(c.x, 1)
+
+    def test_mask_attr_does_not_exist(self):
+        c = DotDict()
+
+        with Measurement('mask_parameter') as msmt:
+            with self.assertRaises(AttributeError):
+                msmt._mask_attr(c, 'x', 2)
+
+    def test_mask_parameter(self):
+        p = Parameter('masking_param', set_cmd=None, initial_value=1)
+
+        with Measurement('mask_parameter') as msmt:
+            self.assertEqual(p(), 1)
+            msmt._mask_parameter(p, 2)
+            for k in Sweep(range(10), 'repetition'):
+                msmt.measure({'a': 3, 'b': 4}, 'acquire_values')
+                self.assertEqual(p(), 2)
+            self.assertEqual(p(), 2)
+
+        self.assertEqual(p(), 1)
+
+    def test_mask_key(self):
+        c = dict(x=1)
+
+        with Measurement('mask_parameter') as msmt:
+            self.assertEqual(c['x'], 1)
+            msmt._mask_key(c, 'x', 2)
+            for k in Sweep(range(10), 'repetition'):
+                msmt.measure({'a': 3, 'b': 4}, 'acquire_values')
+                self.assertEqual(c['x'], 2)
+            self.assertEqual(c['x'], 2)
+
+        self.assertEqual(c['x'], 1)
+
+    def test_mask(self):
+        c = DotDict({'x': 1})
+        p = Parameter('masking_param', set_cmd=None, initial_value=1)
+        d = dict(x=1)
+
+        with Measurement('mask_parameter') as msmt:
+            self.assertEqual(c.x, 1)
+            self.assertEqual(p(), 1)
+            self.assertEqual(d['x'], 1)
+
+            msmt.mask(c, x=2)
+            msmt.mask(p, 2)
+            msmt.mask(d, x=2)
+            for k in Sweep(range(10), 'repetition'):
+                msmt.measure({'a': 3, 'b': 4}, 'acquire_values')
+                self.assertEqual(c.x, 2)
+                self.assertEqual(p(), 2)
+                self.assertEqual(d['x'], 2)
+            self.assertEqual(c.x, 2)
+            self.assertEqual(p(), 2)
+            self.assertEqual(d['x'], 2)
+
+        self.assertEqual(c.x, 1)
+        self.assertEqual(p(), 1)
+        self.assertEqual(d['x'], 1)
+
+    def test_double_mask(self):
+        # TODO
+        pass
+
+    def test_unmask(self):
+        # TODO
         pass
