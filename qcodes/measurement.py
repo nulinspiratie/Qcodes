@@ -1,6 +1,6 @@
 import sys
 import numpy as np
-from typing import List, Tuple, Union, Sequence, Dict, Any, Callable
+from typing import List, Tuple, Union, Sequence, Dict, Any, Callable, Iterable
 import threading
 from time import sleep
 import traceback
@@ -866,6 +866,9 @@ class Sweep:
     def __init__(self, sequence, name=None, unit=None):
         if running_measurement() is None:
             raise RuntimeError("Cannot create a sweep outside a Measurement")
+
+        if not isinstance(sequence, Iterable):
+            raise SyntaxError('Sweep sequence must be iterable')
 
         # Properties for the data array
         self.name = name
