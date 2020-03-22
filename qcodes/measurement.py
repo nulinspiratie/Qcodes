@@ -83,6 +83,7 @@ class Measurement:
         # Note that there are also Measurement.final_actions, which are always
         # executed when the outermost measurement finishes
         self.final_actions = []
+        self._masked_properties = []
 
     @property
     def data_groups(self) -> Dict[Tuple[int], "Measurement"]:
@@ -168,21 +169,20 @@ class Measurement:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         msmt = Measurement.running_measurement
-        for final_action in self.final_actions:
-            try:
-                final_action()
-            except Exception as e:
-                logger.error(
-                    f"Could not execute final action {final_action} \n"
-                    f"{traceback.format_exc()}"
-                )
+
+        self._apply_actions(self.final_actions, label="final", clear=True)
+
+        self.unmask_all()
+
         if msmt is self:
             # Also perform global final actions
             # These are always performed when outermost measurement finishes
+            self._apply_actions(msmt.final_actions, label="global final")
+
             for final_action in Measurement.final_actions:
                 try:
                     final_action()
-                except Exception as e:
+                except Exception:
                     logger.error(
                         f"Could not execute final action {final_action} \n"
                         f"{traceback.format_exc()}"
@@ -460,6 +460,19 @@ class Measurement:
 
         return data_to_store
 
+    def _apply_actions(self, actions: list, label="", clear=False):
+        for action in actions:
+            try:
+                action()
+            except Exception as e:
+                logger.error(
+                    f"Could not execute {label} action {action} \n"
+                    f"{traceback.format_exc()}"
+                )
+
+        if clear:
+            actions.clear()
+
     # Measurement-related functions
     def _measure_parameter(self, parameter, name=None, **kwargs):
         name = name or parameter.name
@@ -543,8 +556,8 @@ class Measurement:
         if not isinstance(value, dict):
             raise SyntaxError(f"{name} must be a dict, not {value}")
 
-        if not isinstance(name, str) or name == '':
-            raise SyntaxError(f'Dict result {name} must have a valid name: {value}')
+        if not isinstance(name, str) or name == "":
+            raise SyntaxError(f"Dict result {name} must have a valid name: {value}")
 
         # Ensure measuring callable matches the current action_indices
         self._verify_action(action=None, name=name, add_if_new=True)
@@ -669,7 +682,15 @@ class Measurement:
         original_value = getattr(obj, attr)
         setattr(obj, attr, value)
 
-        self.final_actions.append(partial(setattr, obj, attr, original_value))
+        self._masked_properties.append(
+            {
+                "type": "attr",
+                "obj": obj,
+                "attr": attr,
+                "original_value": original_value,
+                "value": value,
+            }
+        )
 
         return original_value
 
@@ -689,7 +710,14 @@ class Measurement:
         original_value = param()
         param(value)
 
-        self.final_actions.append(partial(param, original_value))
+        self._masked_properties.append(
+            {
+                "type": "parameter",
+                "obj": param,
+                "original_value": original_value,
+                "value": value,
+            }
+        )
 
         return original_value
 
@@ -710,18 +738,85 @@ class Measurement:
         original_value = obj[key]
         obj[key] = value
 
-        self.final_actions.append(partial(obj.update, **{key: original_value}))
+        self._masked_properties.append(
+            {
+                "type": "key",
+                "obj": obj,
+                "key": key,
+                "original_value": original_value,
+                "value": value,
+            }
+        )
 
         return original_value
 
     def mask(self, obj: object, val=None, **kwargs):
-        if isinstance(obj, Parameter):
-            assert not kwargs
+        if isinstance(obj, Parameter) and not kwargs:
             return self._mask_parameter(obj, val)
         elif isinstance(obj, dict):
+            if not kwargs:
+                raise SyntaxError('Must pass kwargs when masking a dict')
             return [self._mask_key(obj, key, val) for key, val in kwargs.items()]
         else:
+            if not kwargs:
+                raise SyntaxError('Must pass kwargs when masking')
             return [self._mask_attr(obj, key, val) for key, val in kwargs.items()]
+
+    def unmask(
+        self,
+        obj,
+        attr=None,
+        key=None,
+        original_value=None,
+        type=None,
+        value=None,
+        raise_exception=True,
+    ):
+        if original_value is None:
+            # No masked property passed. We collect all the masked properties
+            # that satisfy these requirements and unmask each of them.
+            unmask_properties = []
+            remaining_masked_properties = []
+            for masked_property in self._masked_properties:
+                if masked_property["obj"] != obj:
+                    remaining_masked_properties.append(masked_property)
+                elif attr is not None and masked_property.get("attr") != attr:
+                    remaining_masked_properties.append(masked_property)
+                elif key is not None and masked_property.get("key") != key:
+                    remaining_masked_properties.append(masked_property)
+                else:
+                    unmask_properties.append(masked_property)
+
+            for unmask_property in reversed(unmask_properties):
+                self.unmask(**unmask_property)
+
+            self._masked_properties = remaining_masked_properties
+        else:
+            # A masked property has been passed, which we unmask here
+            try:
+                if type == "key":
+                    obj[key] = original_value
+                elif type == "attr":
+                    setattr(obj, attr, original_value)
+                elif type == "parameter":
+                    obj(original_value)
+                else:
+                    raise SyntaxError(f"Unmask type {type} not understood")
+            except Exception as e:
+                logger.error(
+                    f"Could not unmask {obj} {type} from masked value {value} "
+                    f"to original value {original_value}\n"
+                    f"{traceback.format_exc()}"
+                )
+
+                if raise_exception:
+                    raise e
+
+    def unmask_all(self):
+        masked_properties = reversed(self._masked_properties)
+        for masked_property in masked_properties:
+            self.unmask(**masked_property, raise_exception=False)
+        self._masked_properties.clear()
 
     # Functions relating to measurement flow
     def pause(self):
