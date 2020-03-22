@@ -81,6 +81,10 @@ class TestNewLoop(TestCase):
         self.p_measure = Parameter("p_measure", set_cmd=None)
         self.p_sweep.connect(self.p_measure, scale=10)
 
+    def test_empty_measurement(self):
+        with Measurement('empty_measurement') as msmt:
+            pass
+
     def test_new_loop_1D(self):
         arrs = {}
 
