@@ -187,6 +187,11 @@ class TestNewLoop(TestCase):
 
     # self.verify_msmt(msmt, arrs)
 
+    def test_noniterable_sweep_error(self):
+        with Measurement('noniterable_sweep_error') as msmt:
+            with self.assertRaises(SyntaxError):
+                Sweep(1, 'noniterable')
+
 
 class TestNewLoopParameterNode(TestCase):
     class DictResultsNode(ParameterNode):
