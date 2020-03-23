@@ -183,13 +183,28 @@ class TestNewLoop(TestCase):
 
         verify_msmt(msmt, arrs, allow_nan=True)
 
-    # def test_new_loop_0D(self):
-    #     # TODO Does not work yet
-    #     with Measurement('new_loop_0D') as msmt:
-    #         self.assertEqual(msmt.loop_shape, ())
-    #         msmt.measure(self.p_measure)
+    def test_new_loop_0D(self):
+        # TODO Does not work yet
+        with Measurement('new_loop_0D') as msmt:
+            self.assertEqual(msmt.loop_shape, ())
+            msmt.measure(self.p_measure)
 
-    # self.verify_msmt(msmt, arrs)
+    def test_new_loop_1D_0D(self):
+        # TODO Does not work yet
+        arrs = {}
+
+        with Measurement('new_loop_1D_0D') as msmt:
+            self.assertEqual(msmt.loop_shape, ())
+            for k, val in enumerate(Sweep(self.p_sweep.sweep(0, 1, 0.1))):
+                arr = arrs.setdefault(
+                    msmt.action_indices, np.zeros(msmt.loop_shape)
+                )
+                arr[k] = msmt.measure(self.p_measure)
+            msmt.measure(self.p_measure)
+
+        verify_msmt(msmt, arrs)
+
+        # self.verify_msmt(msmt, arrs)
 
     def test_noniterable_sweep_error(self):
         with Measurement('noniterable_sweep_error') as msmt:
