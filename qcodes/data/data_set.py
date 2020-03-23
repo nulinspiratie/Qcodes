@@ -13,6 +13,7 @@ from .io import DiskIO
 from .location import FormatLocation
 from qcodes.utils.helpers import DelegateAttributes, full_class, deep_update, \
     get_last_input_cells
+from .data_array import DataArray
 
 log = logging.getLogger(__name__)
 
@@ -662,10 +663,14 @@ class DataSet(DelegateAttributes):
 
         return arrays
 
-    def get_array(self, name=None):
+    def get_array(self, name=None) -> DataArray:
         arrays = self.get_arrays(name=name)
-        assert len(arrays) == 1, f"Could not find unique array with name {name}"
-        return arrays[0]
+        if not arrays:
+            raise RuntimeError(f"Could not find any array with name {name}")
+        elif len(arrays) > 1:
+            raise RuntimeError(f'Found {len(arrays)} instead of 1 with name {name}')
+        else:
+            return arrays[0]
 
     def __repr__(self):
         """Rich information about the DataSet and contained arrays."""
