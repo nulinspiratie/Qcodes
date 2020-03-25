@@ -648,7 +648,7 @@ class Measurement:
         elif isinstance(measurable, MultiParameter):
             result = self._measure_multi_parameter(measurable, name=name, **kwargs)
         elif callable(measurable):
-            result = (self._measure_callable(measurable, name=name, **kwargs),)
+            result = self._measure_callable(measurable, name=name, **kwargs)
         elif isinstance(measurable, dict):
             result = self._measure_dict(measurable, name=name)
         elif isinstance(measurable, (float, int, bool, np.ndarray)):
