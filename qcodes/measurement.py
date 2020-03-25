@@ -1,6 +1,6 @@
 import sys
 import numpy as np
-from typing import List, Tuple, Union, Sequence, Dict, Any, Callable
+from typing import List, Tuple, Union, Sequence, Dict, Any, Callable, Iterable
 import threading
 from time import sleep
 import traceback
@@ -16,7 +16,7 @@ from qcodes.instrument.parameter_node import ParameterNode
 from qcodes.utils.helpers import (
     using_ipython,
     directly_executed_from_cell,
-    get_last_input_cells
+    get_last_input_cells,
 )
 
 
@@ -83,6 +83,7 @@ class Measurement:
         # Note that there are also Measurement.final_actions, which are always
         # executed when the outermost measurement finishes
         self.final_actions = []
+        self._masked_properties = []
 
     @property
     def data_groups(self) -> Dict[Tuple[int], "Measurement"]:
@@ -168,24 +169,23 @@ class Measurement:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         msmt = Measurement.running_measurement
-        for final_action in self.final_actions:
-            try:
-                final_action()
-            except Exception as e:
-                logger.error(
-                    f'Could not execute final action {final_action} \n'
-                    f'{traceback.format_exc()}'
-                )
+
+        self._apply_actions(self.final_actions, label="final", clear=True)
+
+        self.unmask_all()
+
         if msmt is self:
             # Also perform global final actions
             # These are always performed when outermost measurement finishes
+            self._apply_actions(msmt.final_actions, label="global final")
+
             for final_action in Measurement.final_actions:
                 try:
                     final_action()
-                except Exception as e:
+                except Exception:
                     logger.error(
-                        f'Could not execute final action {final_action} \n'
-                        f'{traceback.format_exc()}'
+                        f"Could not execute final action {final_action} \n"
+                        f"{traceback.format_exc()}"
                     )
 
             Measurement.running_measurement = None
@@ -204,7 +204,8 @@ class Measurement:
         dataset.add_metadata({"measurement_type": "Measurement"})
 
         # Add instrument information
-        dataset.add_metadata({'station': Station.default.snapshot()})
+        if Station.default is not None:
+            dataset.add_metadata({"station": Station.default.snapshot()})
 
         if using_ipython():
             measurement_cell = get_last_input_cells(1)[0]
@@ -214,13 +215,15 @@ class Measurement:
             # initial code that should be stripped
             init_string = "get_ipython().run_cell_magic('new_job', '', "
             if measurement_code.startswith(init_string):
-                measurement_code = measurement_code[len(init_string)+1:-4]
+                measurement_code = measurement_code[len(init_string) + 1 : -4]
 
-            dataset.add_metadata({
-                'measurement_cell': measurement_cell,
-                'measurement_code': measurement_code,
-                'last_input_cells': get_last_input_cells(20)
-            })
+            dataset.add_metadata(
+                {
+                    "measurement_cell": measurement_cell,
+                    "measurement_code": measurement_code,
+                    "last_input_cells": get_last_input_cells(20),
+                }
+            )
 
     # Data array functions
     def _create_data_array(
@@ -383,8 +386,8 @@ class Measurement:
                 self.action_names[self.action_indices] = name
         elif name != self.action_names[self.action_indices]:
             raise RuntimeError(
-                f'Wrong measurement at action_indices {self.action_indices}. '
-                f'Expected: {self.action_names[self.action_indices]}. Received: {name}'
+                f"Wrong measurement at action_indices {self.action_indices}. "
+                f"Expected: {self.action_names[self.action_indices]}. Received: {name}"
             )
 
     def _add_measurement_result(
@@ -457,6 +460,19 @@ class Measurement:
 
         return data_to_store
 
+    def _apply_actions(self, actions: list, label="", clear=False):
+        for action in actions:
+            try:
+                action()
+            except Exception as e:
+                logger.error(
+                    f"Could not execute {label} action {action} \n"
+                    f"{traceback.format_exc()}"
+                )
+
+        if clear:
+            actions.clear()
+
     # Measurement-related functions
     def _measure_parameter(self, parameter, name=None, **kwargs):
         name = name or parameter.name
@@ -481,9 +497,7 @@ class Measurement:
 
         results_list = multi_parameter(**kwargs)
 
-        results = {
-            name: result for name, result in zip(multi_parameter.names, results_list)
-        }
+        results = dict(zip(multi_parameter.names, results_list))
 
         if name is None:
             name = multi_parameter.name
@@ -510,9 +524,7 @@ class Measurement:
             elif hasattr(callable, "__name__"):
                 name = callable.__name__
             else:
-                action_indices_str = "_".join(
-                    str(idx) for idx in self.action_indices
-                )
+                action_indices_str = "_".join(str(idx) for idx in self.action_indices)
                 name = f"data_group_{action_indices_str}"
 
         # Ensure measuring callable matches the current action_indices
@@ -528,10 +540,7 @@ class Measurement:
         # has loop indices corresponding to the current ones.
         msmt = Measurement.running_measurement
         data_group = msmt.data_groups.get(action_indices)
-        if getattr(data_group, "loop_indices", None) == self.loop_indices:
-            # Measurement has already been performed by a nested measurement
-            return results
-        else:
+        if getattr(data_group, "loop_indices", None) != self.loop_indices:
             # No nested measurement has been performed in the callable.
             # Add results, which should be dict, by creating a nested measurement
             if not isinstance(results, dict):
@@ -543,9 +552,25 @@ class Measurement:
 
         return results
 
+    def _measure_dict(self, value: dict, name: str):
+        if not isinstance(value, dict):
+            raise SyntaxError(f"{name} must be a dict, not {value}")
+
+        if not isinstance(name, str) or name == "":
+            raise SyntaxError(f"Dict result {name} must have a valid name: {value}")
+
+        # Ensure measuring callable matches the current action_indices
+        self._verify_action(action=None, name=name, add_if_new=True)
+
+        with Measurement(name) as msmt:
+            for key, val in value.items():
+                msmt.measure(val, name=key)
+
+        return value
+
     def _measure_value(self, value, name):
         if name is None:
-            raise RuntimeError('Must provide a name when measuring a value')
+            raise RuntimeError("Must provide a name when measuring a value")
 
         # Ensure measuring callable matches the current action_indices
         self._verify_action(action=None, name=name, add_if_new=True)
@@ -563,11 +588,11 @@ class Measurement:
 
     def measure(
         self,
-        measurable: Union[Parameter, Callable, float, int, bool, np.ndarray],
+        measurable: Union[Parameter, Callable, dict, float, int, bool, np.ndarray],
         name=None,
         label=None,
         unit=None,
-            **kwargs
+        **kwargs,
     ):
         """Perform a single measurement of a Parameter, function, etc.
 
@@ -623,13 +648,15 @@ class Measurement:
         elif isinstance(measurable, MultiParameter):
             result = self._measure_multi_parameter(measurable, name=name, **kwargs)
         elif callable(measurable):
-            result = self._measure_callable(measurable, name=name, **kwargs)
+            result = (self._measure_callable(measurable, name=name, **kwargs),)
+        elif isinstance(measurable, dict):
+            result = self._measure_dict(measurable, name=name)
         elif isinstance(measurable, (float, int, bool, np.ndarray)):
             result = self._measure_value(measurable, name=name)
         else:
             raise RuntimeError(
                 f"Cannot measure {measurable} as it cannot be called, and it "
-                f"is not an int, float, bool, or numpy array."
+                f"is not a dict, int, float, bool, or numpy array."
             )
 
         # Increment last action index by 1
@@ -637,7 +664,8 @@ class Measurement:
 
         return result
 
-    def mask_attr(self, obj: object, attr: str, value):
+    # Methods related to masking of parameters/attributes/keys
+    def _mask_attr(self, obj: object, attr: str, value):
         """Temporarily override an object attribute during the measurement.
 
         The value will be reset at the end of the measurement
@@ -654,11 +682,19 @@ class Measurement:
         original_value = getattr(obj, attr)
         setattr(obj, attr, value)
 
-        self.final_actions.append(partial(setattr, obj, attr, original_value))
+        self._masked_properties.append(
+            {
+                "type": "attr",
+                "obj": obj,
+                "attr": attr,
+                "original_value": original_value,
+                "value": value,
+            }
+        )
 
         return original_value
 
-    def mask_parameter(self, param, value):
+    def _mask_parameter(self, param, value):
         """Temporarily override a parameter value during the measurement.
 
         The value will be reset at the end of the measurement.
@@ -674,10 +710,113 @@ class Measurement:
         original_value = param()
         param(value)
 
-        self.final_actions.append(partial(param, original_value))
+        self._masked_properties.append(
+            {
+                "type": "parameter",
+                "obj": param,
+                "original_value": original_value,
+                "value": value,
+            }
+        )
 
         return original_value
 
+    def _mask_key(self, obj: dict, key: str, value):
+        """Temporarily override a dictionary key during the measurement.
+
+        The value will be reset at the end of the measurement
+        This can also be a nested measurement.
+
+        Args:
+            obj: dictionary whose value should be masked
+            key: key to be masked
+            val: Masked value
+
+        Returns:
+            original value
+        """
+        original_value = obj[key]
+        obj[key] = value
+
+        self._masked_properties.append(
+            {
+                "type": "key",
+                "obj": obj,
+                "key": key,
+                "original_value": original_value,
+                "value": value,
+            }
+        )
+
+        return original_value
+
+    def mask(self, obj: object, val=None, **kwargs):
+        if isinstance(obj, Parameter) and not kwargs:
+            return self._mask_parameter(obj, val)
+        elif isinstance(obj, dict):
+            if not kwargs:
+                raise SyntaxError('Must pass kwargs when masking a dict')
+            return [self._mask_key(obj, key, val) for key, val in kwargs.items()]
+        else:
+            if not kwargs:
+                raise SyntaxError('Must pass kwargs when masking')
+            return [self._mask_attr(obj, key, val) for key, val in kwargs.items()]
+
+    def unmask(
+        self,
+        obj,
+        attr=None,
+        key=None,
+        original_value=None,
+        type=None,
+        value=None,
+        raise_exception=True,
+    ):
+        if original_value is None:
+            # No masked property passed. We collect all the masked properties
+            # that satisfy these requirements and unmask each of them.
+            unmask_properties = []
+            remaining_masked_properties = []
+            for masked_property in self._masked_properties:
+                if masked_property["obj"] != obj:
+                    remaining_masked_properties.append(masked_property)
+                elif attr is not None and masked_property.get("attr") != attr:
+                    remaining_masked_properties.append(masked_property)
+                elif key is not None and masked_property.get("key") != key:
+                    remaining_masked_properties.append(masked_property)
+                else:
+                    unmask_properties.append(masked_property)
+
+            for unmask_property in reversed(unmask_properties):
+                self.unmask(**unmask_property)
+
+            self._masked_properties = remaining_masked_properties
+        else:
+            # A masked property has been passed, which we unmask here
+            try:
+                if type == "key":
+                    obj[key] = original_value
+                elif type == "attr":
+                    setattr(obj, attr, original_value)
+                elif type == "parameter":
+                    obj(original_value)
+                else:
+                    raise SyntaxError(f"Unmask type {type} not understood")
+            except Exception as e:
+                logger.error(
+                    f"Could not unmask {obj} {type} from masked value {value} "
+                    f"to original value {original_value}\n"
+                    f"{traceback.format_exc()}"
+                )
+
+                if raise_exception:
+                    raise e
+
+    def unmask_all(self):
+        masked_properties = reversed(self._masked_properties)
+        for masked_property in masked_properties:
+            self.unmask(**masked_property, raise_exception=False)
+        self._masked_properties.clear()
 
     # Functions relating to measurement flow
     def pause(self):
@@ -705,7 +844,6 @@ class Measurement:
         self.action_indices = tuple(action_indices)
         return self.action_indices
 
-
     def step_out(self, reduce_dimension=True):
         if Measurement.running_measurement is not self:
             Measurement.running_measurement.step_out(reduce_dimension=reduce_dimension)
@@ -728,6 +866,9 @@ class Sweep:
     def __init__(self, sequence, name=None, unit=None):
         if running_measurement() is None:
             raise RuntimeError("Cannot create a sweep outside a Measurement")
+
+        if not isinstance(sequence, Iterable):
+            raise SyntaxError('Sweep sequence must be iterable')
 
         # Properties for the data array
         self.name = name
