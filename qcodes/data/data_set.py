@@ -2,6 +2,7 @@
 
 import time
 import logging
+from warnings import warn
 from traceback import format_exc
 from copy import deepcopy
 from collections import OrderedDict
@@ -639,6 +640,24 @@ class DataSet(DelegateAttributes):
             self.metadata['last_input_cells'] = last_input_cells
 
         return deepcopy(self.metadata)
+
+    def print_measurement(self, silent: bool = False, return_str: bool = False):
+        """Print the measurement cell
+        
+        Args:
+            silent: Whether to print the results
+            return_str: Whether to return the measurement code as a string
+        """
+        if 'measurement_code' in self.metadata:
+            measurement_code = self.metadata['measurement_code']
+            measurement_code = measurement_code.replace('\\n', '\n')
+            if not silent:
+                print(measurement_code)
+
+            if return_str:
+                return measurement_code
+        else:
+            warn('Metadata does not contain measurement code')
 
     def get_array_metadata(self, array_id):
         """
