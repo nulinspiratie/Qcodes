@@ -20,9 +20,6 @@ from qcodes.utils.helpers import (
 )
 
 
-logger = logging.getLogger(__name__)
-
-
 class Measurement:
     """
     Args:
@@ -84,6 +81,13 @@ class Measurement:
         # executed when the outermost measurement finishes
         self.final_actions = []
         self._masked_properties = []
+
+    @property
+    def log(self) -> logging.Logger:
+        if self.name is not None:
+            return logging.getLogger(f'msmt {self.name}')
+        else:
+            return logging.getLogger('msmt')
 
     @property
     def data_groups(self) -> Dict[Tuple[int], "Measurement"]:
@@ -183,7 +187,7 @@ class Measurement:
                 try:
                     final_action()
                 except Exception:
-                    logger.error(
+                    self.log.error(
                         f"Could not execute final action {final_action} \n"
                         f"{traceback.format_exc()}"
                     )
@@ -465,7 +469,7 @@ class Measurement:
             try:
                 action()
             except Exception as e:
-                logger.error(
+                self.log.error(
                     f"Could not execute {label} action {action} \n"
                     f"{traceback.format_exc()}"
                 )
@@ -803,7 +807,7 @@ class Measurement:
                 else:
                     raise SyntaxError(f"Unmask type {type} not understood")
             except Exception as e:
-                logger.error(
+                self.log.error(
                     f"Could not unmask {obj} {type} from masked value {value} "
                     f"to original value {original_value}\n"
                     f"{traceback.format_exc()}"
