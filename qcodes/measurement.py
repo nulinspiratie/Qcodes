@@ -235,7 +235,6 @@ class Measurement:
         action_indices: Tuple[int],
         result,
         parameter: Parameter = None,
-        ndim: int = None,
         is_setpoint: bool = False,
         name: str = None,
         label: str = None,
@@ -253,8 +252,6 @@ class Measurement:
                 string, in which case it is the data_array name
             result: Result returned by the Parameter
             action_indices: Action indices for which to store parameter
-            ndim: Number of dimensions. If not provided, will use length of
-                action_indices
             is_setpoint: Whether the Parameter is used for sweeping or measuring
             label: Data array label. If not provided, the parameter label is
                 used. If the parameter is a name string, the label is extracted
@@ -270,9 +267,6 @@ class Measurement:
                 "When creating a data array, must provide either a parameter or a name"
             )
 
-        if ndim is None:
-            ndim = len(action_indices)
-
         array_kwargs = {
             "is_setpoint": is_setpoint,
             "action_indices": action_indices,
@@ -281,6 +275,10 @@ class Measurement:
 
         if is_setpoint or isinstance(result, (np.ndarray, list)):
             array_kwargs["shape"] += np.shape(result)
+
+        # Use dummy index (1, ) if measurement is performed outside a Sweep
+        if not array_kwargs["shape"]:
+            array_kwargs["shape"] = (1, )
 
         if isinstance(parameter, Parameter):
             array_kwargs["parameter"] = parameter
@@ -297,7 +295,7 @@ class Measurement:
         # Add setpoint arrays
         if not is_setpoint:
             array_kwargs["set_arrays"] = self._add_set_arrays(
-                action_indices, result, name=(name or parameter.name), ndim=ndim
+                action_indices, result, name=(name or parameter.name)
             )
 
         data_array = DataArray(**array_kwargs)
@@ -319,10 +317,10 @@ class Measurement:
         return data_array
 
     def _add_set_arrays(
-        self, action_indices: Tuple[int], result, name: str, ndim: int,
+        self, action_indices: Tuple[int], result, name: str,
     ):
         set_arrays = []
-        for k in range(1, ndim):
+        for k in range(1, len(action_indices)):
             sweep_indices = action_indices[:k]
             if sweep_indices in self.set_arrays:
                 set_arrays.append(self.set_arrays[sweep_indices])
@@ -347,6 +345,17 @@ class Measurement:
                     is_setpoint=True,
                 )
                 set_arrays.append(set_array)
+
+        # Add a dummy array in case the measurement was performed outside of
+        # a Sweep. This is not needed if the result is an array
+        if not set_arrays and not self.loop_indices:
+            set_arrays = [self._create_data_array(
+                action_indices=running_measurement().action_indices,
+                result=result,
+                name="None",
+                is_setpoint=True,
+            )]
+            set_arrays[0][0] = 1
 
         return tuple(set_arrays)
 
@@ -399,7 +408,6 @@ class Measurement:
         action_indices,
         result,
         parameter=None,
-        ndim=None,
         store: bool = True,
         name: str = None,
         label: str = None,
@@ -418,7 +426,6 @@ class Measurement:
                 action_indices,
                 result,
                 parameter=parameter,
-                ndim=ndim,
                 name=name,
                 label=label,
                 unit=unit,
@@ -459,8 +466,14 @@ class Measurement:
                 arr = np.broadcast_to(arr, result.shape[: k + 1])
                 data_to_store[set_array.array_id] = arr
 
+        # Use dummy index if there are no loop indices.
+        # This happens if the measurement is performed outside a Sweep
+        loop_indices = self.loop_indices
+        if not loop_indices and not isinstance(result, (list, np.ndarray)):
+            loop_indices = (0, )
+
         if store:
-            self.dataset.store(self.loop_indices, data_to_store)
+            self.dataset.store(loop_indices, data_to_store)
 
         return data_to_store
 
@@ -592,7 +605,7 @@ class Measurement:
 
     def measure(
         self,
-        measurable: Union[Parameter, Callable, dict, float, int, bool, np.ndarray],
+        measurable: Union[Parameter, Callable, dict, float, int, bool, np.ndarray, type(None)],
         name=None,
         label=None,
         unit=None,
@@ -655,7 +668,7 @@ class Measurement:
             result = self._measure_callable(measurable, name=name, **kwargs)
         elif isinstance(measurable, dict):
             result = self._measure_dict(measurable, name=name)
-        elif isinstance(measurable, (float, int, bool, np.ndarray)):
+        elif isinstance(measurable, (float, int, bool, np.ndarray, type(None))):
             result = self._measure_value(measurable, name=name)
         else:
             raise RuntimeError(
