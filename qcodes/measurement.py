@@ -782,7 +782,17 @@ class Measurement:
         return original_value
 
     def mask(self, obj: object, val=None, **kwargs):
+        if isinstance(obj, ParameterNode):
+            assert val is None
+            # kwargs can be either parameters or attrs
+            return [
+                self._mask_parameter(obj.parameters[key], val)
+                if key in obj.parameters
+                else self._mask_attr(obj, key, val)
+                for key, val in kwargs.items()
+            ]
         if isinstance(obj, Parameter) and not kwargs:
+            # if kwargs are passed, they are to be treated as attrs
             return self._mask_parameter(obj, val)
         elif isinstance(obj, dict):
             if not kwargs:
