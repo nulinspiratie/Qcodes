@@ -200,7 +200,10 @@ class TestNewLoop(TestCase):
                     msmt.action_indices, np.zeros(msmt.loop_shape)
                 )
                 arr[k] = msmt.measure(self.p_measure)
-            msmt.measure(self.p_measure)
+            arr = arrs.setdefault(
+                msmt.action_indices, np.zeros((1,))
+            )
+            arr[0] = msmt.measure(self.p_measure)
 
         verify_msmt(msmt, arrs)
 
@@ -210,6 +213,47 @@ class TestNewLoop(TestCase):
         with Measurement('noniterable_sweep_error') as msmt:
             with self.assertRaises(SyntaxError):
                 Sweep(1, 'noniterable')
+
+    def test_new_loop_1D_None_result(self):
+        arrs = {}
+        p_measure = Parameter("p_measure", set_cmd=None)
+
+        with Measurement("new_loop_1D_None_result") as msmt:
+            for k, val in enumerate(Sweep(self.p_sweep.sweep(0, 1, 0.1))):
+                arr = arrs.setdefault(
+                    msmt.action_indices, np.zeros(msmt.loop_shape)
+                )
+
+                if not k % 2:
+                    p_measure(k)
+                else:
+                    p_measure(None)
+                arr[k] = msmt.measure(p_measure)
+
+        verify_msmt(msmt, arrs, allow_nan=True)
+
+        # Verify that the measurement dataset records the correct measurement type
+        data = load_data(msmt.dataset.location)
+        self.assertEqual(data.metadata.get("measurement_type"), "Measurement")
+
+    def test_new_loop_1D_None_result_raw_value(self):
+        arrs = {}
+        with Measurement("new_loop_1D_None_result") as msmt:
+            for k, val in enumerate(Sweep(self.p_sweep.sweep(0, 1, 0.1))):
+                arr = arrs.setdefault(
+                    msmt.action_indices, np.zeros(msmt.loop_shape)
+                )
+
+                if not k % 2:
+                    arr[k] = msmt.measure(k, 'p')
+                else:
+                    arr[k] = msmt.measure(None, 'p')
+
+        verify_msmt(msmt, arrs, allow_nan=True)
+
+        # Verify that the measurement dataset records the correct measurement type
+        data = load_data(msmt.dataset.location)
+        self.assertEqual(data.metadata.get("measurement_type"), "Measurement")
 
 
 class TestNewLoopParameterNode(TestCase):
@@ -406,6 +450,28 @@ class TestNewLoopArray(TestCase):
         set_array = np.broadcast_to(np.arange(12), (11, 5, 12))
         np.testing.assert_array_almost_equal(
             dataset.arrays["p_measure_set1_0_0_0"], set_array
+        )
+
+    def test_measure_parameter_array_2D_no_sweep(self):
+        # TODO not yet working
+        arrs = {}
+
+        p_measure = Parameter("p_measure", get_cmd=lambda: np.random.rand(5, 12))
+
+        with Measurement("new_loop_parameter_array_2D") as msmt:
+            result = msmt.measure(p_measure)
+            arrs[(0, )] = result
+
+        dataset = verify_msmt(msmt, arrs)
+
+        # Perform additional test on set arrays
+        np.testing.assert_array_almost_equal(
+            dataset.arrays["p_measure_set0_0"], np.arange(5)
+        )
+
+        set_array = np.broadcast_to(np.arange(12), (5, 12))
+        np.testing.assert_array_almost_equal(
+            dataset.arrays["p_measure_set1_0_0"], set_array
         )
 
     class MeasurableNode(ParameterNode):
