@@ -255,6 +255,11 @@ class TestNewLoop(TestCase):
         data = load_data(msmt.dataset.location)
         self.assertEqual(data.metadata.get("measurement_type"), "Measurement")
 
+    def test_measure_third_arg_error(self):
+        with Measurement("measure_third_arg_error") as msmt:
+            with self.assertRaises(TypeError):
+                msmt.measure(1232, 'measurable', 1232)
+
 
 class TestNewLoopParameterNode(TestCase):
     class DictResultsNode(ParameterNode):
