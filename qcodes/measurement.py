@@ -607,6 +607,7 @@ class Measurement:
         self,
         measurable: Union[Parameter, Callable, dict, float, int, bool, np.ndarray, type(None)],
         name=None,
+        *,  # Everything after here must be a kwarg
         label=None,
         unit=None,
         **kwargs,
