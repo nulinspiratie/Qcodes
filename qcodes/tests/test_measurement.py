@@ -1068,3 +1068,20 @@ class TestMask(TestCase):
 
         self.assertEqual(p(), 1)
         self.assertEqual(p.x, 1)
+
+    def test_mask_parameters_in_node(self):
+        node = ParameterNode('node', use_as_attributes=True)
+        node.p1 = Parameter(set_cmd=None, initial_value=1)
+        node.p2 = Parameter(set_cmd=None, initial_value=2)
+        node.p3 = 3
+
+        with Measurement('mask_parameters_in_node') as msmt:
+            msmt.mask(node, p1=42, p2=43, p3=44)
+
+            self.assertEqual(node.p1, 42)
+            self.assertEqual(node.p2, 43)
+            self.assertEqual(node.p3, 44)
+
+        self.assertEqual(node.p1, 1)
+        self.assertEqual(node.p2, 2)
+        self.assertEqual(node.p3, 3)
