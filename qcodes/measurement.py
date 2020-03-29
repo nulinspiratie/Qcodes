@@ -85,9 +85,9 @@ class Measurement:
     @property
     def log(self) -> logging.Logger:
         if self.name is not None:
-            return logging.getLogger(f'msmt {self.name}')
+            return logging.getLogger(f"msmt {self.name}")
         else:
-            return logging.getLogger('msmt')
+            return logging.getLogger("msmt")
 
     @property
     def data_groups(self) -> Dict[Tuple[int], "Measurement"]:
@@ -278,13 +278,17 @@ class Measurement:
 
         # Use dummy index (1, ) if measurement is performed outside a Sweep
         if not array_kwargs["shape"]:
-            array_kwargs["shape"] = (1, )
+            array_kwargs["shape"] = (1,)
 
         if isinstance(parameter, Parameter):
             array_kwargs["parameter"] = parameter
             # Add a custom name
             if name is not None:
                 array_kwargs["full_name"] = name
+            if label is not None:
+                array_kwargs["label"] = label
+            if unit is not None:
+                array_kwargs["unit"] = unit
         else:
             array_kwargs["name"] = name
             if label is None:
@@ -349,12 +353,14 @@ class Measurement:
         # Add a dummy array in case the measurement was performed outside of
         # a Sweep. This is not needed if the result is an array
         if not set_arrays and not self.loop_indices:
-            set_arrays = [self._create_data_array(
-                action_indices=running_measurement().action_indices,
-                result=result,
-                name="None",
-                is_setpoint=True,
-            )]
+            set_arrays = [
+                self._create_data_array(
+                    action_indices=running_measurement().action_indices,
+                    result=result,
+                    name="None",
+                    is_setpoint=True,
+                )
+            ]
             set_arrays[0][0] = 1
 
         return tuple(set_arrays)
@@ -470,7 +476,7 @@ class Measurement:
         # This happens if the measurement is performed outside a Sweep
         loop_indices = self.loop_indices
         if not loop_indices and not isinstance(result, (list, np.ndarray)):
-            loop_indices = (0, )
+            loop_indices = (0,)
 
         if store:
             self.dataset.store(loop_indices, data_to_store)
@@ -491,7 +497,7 @@ class Measurement:
             actions.clear()
 
     # Measurement-related functions
-    def _measure_parameter(self, parameter, name=None, **kwargs):
+    def _measure_parameter(self, parameter, name=None, label=None, unit=None, **kwargs):
         name = name or parameter.name
 
         # Ensure measuring parameter matches the current action_indices
@@ -501,7 +507,12 @@ class Measurement:
         result = parameter(**kwargs)
 
         self._add_measurement_result(
-            self.action_indices, result, parameter=parameter, name=name
+            self.action_indices,
+            result,
+            parameter=parameter,
+            name=name,
+            label=label,
+            unit=unit,
         )
 
         return result
@@ -585,7 +596,7 @@ class Measurement:
 
         return value
 
-    def _measure_value(self, value, name):
+    def _measure_value(self, value, name, label=None, unit=None):
         if name is None:
             raise RuntimeError("Must provide a name when measuring a value")
 
@@ -597,15 +608,16 @@ class Measurement:
             action_indices=self.action_indices,
             result=result,
             name=name,
-            # label=label,
-            # unit=unit,
+            label=label,
+            unit=unit,
         )
         return result
-        # TODO uncomment label, unit
 
     def measure(
         self,
-        measurable: Union[Parameter, Callable, dict, float, int, bool, np.ndarray, type(None)],
+        measurable: Union[
+            Parameter, Callable, dict, float, int, bool, np.ndarray, type(None)
+        ],
         name=None,
         *,  # Everything after here must be a kwarg
         label=None,
@@ -633,7 +645,6 @@ class Measurement:
         Returns:
             Return value of measurable
         """
-        # TODO add label, unit, etc. as kwargs
         if not self.is_context_manager:
             raise RuntimeError(
                 "Must use the Measurement as a context manager, "
@@ -662,7 +673,9 @@ class Measurement:
 
         # TODO Incorporate kwargs name, label, and unit, into each of these
         if isinstance(measurable, Parameter):
-            result = self._measure_parameter(measurable, name=name, **kwargs)
+            result = self._measure_parameter(
+                measurable, name=name, label=label, unit=unit, **kwargs
+            )
         elif isinstance(measurable, MultiParameter):
             result = self._measure_multi_parameter(measurable, name=name, **kwargs)
         elif callable(measurable):
@@ -670,7 +683,7 @@ class Measurement:
         elif isinstance(measurable, dict):
             result = self._measure_dict(measurable, name=name)
         elif isinstance(measurable, (float, int, bool, np.ndarray, type(None))):
-            result = self._measure_value(measurable, name=name)
+            result = self._measure_value(measurable, name=name, label=label, unit=unit)
         else:
             raise RuntimeError(
                 f"Cannot measure {measurable} as it cannot be called, and it "
@@ -773,11 +786,11 @@ class Measurement:
             return self._mask_parameter(obj, val)
         elif isinstance(obj, dict):
             if not kwargs:
-                raise SyntaxError('Must pass kwargs when masking a dict')
+                raise SyntaxError("Must pass kwargs when masking a dict")
             return [self._mask_key(obj, key, val) for key, val in kwargs.items()]
         else:
             if not kwargs:
-                raise SyntaxError('Must pass kwargs when masking')
+                raise SyntaxError("Must pass kwargs when masking")
             return [self._mask_attr(obj, key, val) for key, val in kwargs.items()]
 
     def unmask(
@@ -886,7 +899,7 @@ class Sweep:
             raise RuntimeError("Cannot create a sweep outside a Measurement")
 
         if not isinstance(sequence, Iterable):
-            raise SyntaxError('Sweep sequence must be iterable')
+            raise SyntaxError("Sweep sequence must be iterable")
 
         # Properties for the data array
         self.name = name
