@@ -271,6 +271,15 @@ class TestNewLoopBasics(TestCase):
         self.assertEqual(data.measurable_0_0.label, "MyLabel")
         self.assertEqual(data.measurable_0_0.unit, "Hz")
 
+    def test_error_when_array_limit_reached(self):
+        with Measurement('error_when_array_limit_reached') as msmt:
+            for k in range(msmt.max_arrays+1):  # Note the lack of an encapsulating Sweep
+                if k < msmt.max_arrays:
+                    msmt.measure(123, 'measurable')
+                else:
+                    with self.assertRaises(RuntimeError):
+                        msmt.measure(123, 'measurable')
+
 
 class TestNewLoopParameterNode(TestCase):
     class DictResultsNode(ParameterNode):
