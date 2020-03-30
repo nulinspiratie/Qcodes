@@ -684,6 +684,7 @@ class Measurement:
             result = self._measure_parameter(
                 measurable, name=name, label=label, unit=unit, **kwargs
             )
+            self.skip()  # Increment last action index by 1
         elif isinstance(measurable, MultiParameter):
             result = self._measure_multi_parameter(measurable, name=name, **kwargs)
         elif callable(measurable):
@@ -692,14 +693,12 @@ class Measurement:
             result = self._measure_dict(measurable, name=name)
         elif isinstance(measurable, (float, int, bool, np.ndarray, type(None))):
             result = self._measure_value(measurable, name=name, label=label, unit=unit)
+            self.skip()  # Increment last action index by 1
         else:
             raise RuntimeError(
                 f"Cannot measure {measurable} as it cannot be called, and it "
                 f"is not a dict, int, float, bool, or numpy array."
             )
-
-        # Increment last action index by 1
-        self.skip()
 
         return result
 
