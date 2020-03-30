@@ -2,6 +2,7 @@
 
 import time
 import logging
+from warnings import warn
 from traceback import format_exc
 from copy import deepcopy
 from collections import OrderedDict
@@ -13,6 +14,7 @@ from .io import DiskIO
 from .location import FormatLocation
 from qcodes.utils.helpers import DelegateAttributes, full_class, deep_update, \
     get_last_input_cells
+from .data_array import DataArray
 
 log = logging.getLogger(__name__)
 
@@ -639,6 +641,24 @@ class DataSet(DelegateAttributes):
 
         return deepcopy(self.metadata)
 
+    def print_measurement(self, silent: bool = False, return_str: bool = False):
+        """Print the measurement cell
+        
+        Args:
+            silent: Whether to print the results
+            return_str: Whether to return the measurement code as a string
+        """
+        if 'measurement_code' in self.metadata:
+            measurement_code = self.metadata['measurement_code']
+            measurement_code = measurement_code.replace('\\n', '\n')
+            if not silent:
+                print(measurement_code)
+
+            if return_str:
+                return measurement_code
+        else:
+            warn('Metadata does not contain measurement code')
+
     def get_array_metadata(self, array_id):
         """
         Get the metadata for a single contained DataArray.
@@ -662,10 +682,14 @@ class DataSet(DelegateAttributes):
 
         return arrays
 
-    def get_array(self, name=None):
+    def get_array(self, name=None) -> DataArray:
         arrays = self.get_arrays(name=name)
-        assert len(arrays) == 1, f"Could not find unique array with name {name}"
-        return arrays[0]
+        if not arrays:
+            raise RuntimeError(f"Could not find any array with name {name}")
+        elif len(arrays) > 1:
+            raise RuntimeError(f'Found {len(arrays)} instead of 1 with name {name}')
+        else:
+            return arrays[0]
 
     def __repr__(self):
         """Rich information about the DataSet and contained arrays."""
