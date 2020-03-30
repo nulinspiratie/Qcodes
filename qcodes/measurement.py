@@ -49,6 +49,7 @@ class Measurement:
     _default_measurement_name = "msmt"
     _default_dataset_name = "data"
     final_actions = []
+    max_arrays = 100
 
     def __init__(self, name: str, force_cell_thread: bool = True):
         self.name = name
@@ -265,6 +266,13 @@ class Measurement:
         if parameter is None and name is None:
             raise SyntaxError(
                 "When creating a data array, must provide either a parameter or a name"
+            )
+
+        if len(running_measurement().data_arrays) >= self.max_arrays:
+            raise RuntimeError(
+                f'Number of arrays in dataset exceeds '
+                f'Measurement.max_arrays={self.max_arrays}. Perhaps you forgot'
+                f'to encapsulate a loop with a Sweep()?'
             )
 
         array_kwargs = {
