@@ -110,6 +110,8 @@ class TestNewLoopBasics(TestCase):
                 arr = arrs.setdefault(msmt.action_indices, np.zeros(msmt.loop_shape))
                 arr[k] = msmt.measure(self.p_measure)
 
+        self.assertListEqual([(0, 0), (0, 1)], list(msmt.data_arrays))
+
         verify_msmt(msmt, arrs)
 
     def test_new_loop_2D(self):
@@ -408,6 +410,21 @@ class TestNewLoopMeasureDict(TestCase):
         verification_arrays = {(0, 0, 0): range(10), (0, 0, 1): 2 * np.arange(10)}
         verify_msmt(msmt, verification_arrays=verification_arrays)
 
+    def test_measure_double_dict(self):
+        with Measurement("measure_double_dict") as msmt:
+            for k in Sweep(range(10), "repetition"):
+                msmt.measure({"a": k, "b": 2 * k}, "dict1_msmt")
+                msmt.measure({"a": k+1, "b": 2 * k+1}, "dict2_msmt")
+
+        verification_arrays = {
+            (0, 0, 0): range(10),
+            (0, 0, 1): 2 * np.arange(10),
+            (0, 1, 0): range(1, 11),
+            (0, 1, 1): 2 * np.arange(10) + 1,
+        }
+        self.assertListEqual(list(verification_arrays), list(msmt.data_arrays))
+        verify_msmt(msmt, verification_arrays=verification_arrays)
+
     def test_measure_dict_no_name(self):
         with Measurement("measure_dict") as msmt:
             for k in Sweep(range(10), "repetition"):
@@ -661,21 +678,23 @@ class TestMeasurementThread(TestCase):
         job.join()
 
 
+class MultiParameterTest(MultiParameter):
+    def __init__(self, name):
+        super().__init__(
+            name=name,
+            names=("val1", "val2", "val3"),
+            units=("V", "Hz", ""),
+            shapes=((), (), ()),
+        )
+        self.values = (1, 2, 3)
+
+    def get_raw(self):
+        return self.values
+
+
 class TestMultiParameter(TestCase):
-    class TestMultiParameter(MultiParameter):
-        def __init__(self, name):
-            super().__init__(
-                name=name,
-                names=("val1", "val2", "val3"),
-                units=("V", "Hz", ""),
-                shapes=((), (), ()),
-            )
-
-        def get_raw(self):
-            return (1, 2, 3)
-
     def test_basic_multi_parameter(self):
-        multi_parameter = self.TestMultiParameter("multi_param")
+        multi_parameter = MultiParameterTest("multi_param")
         sweep_param = Parameter("sweep_param", set_cmd=None)
 
         with Measurement("test_multi_parameter") as msmt:
@@ -689,6 +708,35 @@ class TestMultiParameter(TestCase):
             (0, 0, 1): [2] * 11,
             (0, 0, 2): [3] * 11,
         }
+
+        self.assertListEqual([(0, 0, 0), (0, 0, 1), (0, 0, 2)], list(msmt.data_arrays))
+
+        verify_msmt(msmt, verification_arrays=verification_arrays)
+
+    def test_double_multi_parameter(self):
+        multi_parameter1 = MultiParameterTest("multi_param1")
+        multi_parameter2 = MultiParameterTest("multi_param2")
+        multi_parameter2.values = (2,3,4)
+        sweep_param = Parameter("sweep_param", set_cmd=None)
+
+        with Measurement("test_double_multi_parameter") as msmt:
+            for val in Sweep(sweep_param.sweep(0, 10, 1)):
+                msmt.measure(multi_parameter1)
+                msmt.measure(multi_parameter2)
+
+        self.assertEqual(msmt.data_groups[(0, 0)].name, "multi_param1")
+        self.assertEqual(msmt.data_groups[(0, 1)].name, "multi_param2")
+
+        verification_arrays = {
+            (0, 0, 0): [1] * 11,
+            (0, 0, 1): [2] * 11,
+            (0, 0, 2): [3] * 11,
+            (0, 1, 0): [2] * 11,
+            (0, 1, 1): [3] * 11,
+            (0, 1, 2): [4] * 11,
+        }
+        self.assertListEqual(list(verification_arrays), list(msmt.data_arrays))
+
         verify_msmt(msmt, verification_arrays=verification_arrays)
 
 
@@ -1094,3 +1142,79 @@ class TestMask(TestCase):
         self.assertEqual(node.p1, 1)
         self.assertEqual(node.p2, 2)
         self.assertEqual(node.p3, 3)
+
+
+class TestMeasurementControl(TestCase):
+    def test_revert_1D(self):
+        arrs = {}
+
+        with Measurement("revert_1D") as msmt:
+            p_measure = Parameter('p_measure', set_cmd=None)
+            p_sweep = Parameter('p_sweep', set_cmd=None)
+
+            for k, val in enumerate(Sweep(p_sweep.sweep(0, 1, 0.1))):
+                arr = arrs.setdefault(msmt.action_indices, np.zeros(msmt.loop_shape))
+                p_measure(1)
+                arr[k] = msmt.measure(p_measure)
+
+                if k == 5:
+                    msmt.revert()
+                    p_measure(2)
+                    arr[k] = msmt.measure(p_measure)
+
+        self.assertListEqual([(0, 0)], list(msmt.data_arrays))
+
+        verify_msmt(msmt, arrs)
+
+    def test_revert_1D_twice(self):
+        arrs = {}
+
+        with Measurement("revert_1D_twice") as msmt:
+            p_measure1 = Parameter('p_measure1', set_cmd=None)
+            p_measure2 = Parameter('p_measure2', set_cmd=None)
+            p_sweep = Parameter('p_sweep', set_cmd=None)
+
+            for k, val in enumerate(Sweep(p_sweep.sweep(0, 1, 0.1))):
+                arr1 = arrs.setdefault(msmt.action_indices, np.zeros(msmt.loop_shape))
+                p_measure1(1)
+                arr1[k] = msmt.measure(p_measure1)
+
+                arr2 = arrs.setdefault(msmt.action_indices, np.zeros(msmt.loop_shape))
+                p_measure2(2)
+                arr2[k] = msmt.measure(p_measure2)
+
+                if k == 5:
+                    msmt.revert(2)
+                    p_measure1(3)
+                    p_measure2(4)
+                    arr1[k] = msmt.measure(p_measure1)
+                    arr2[k] = msmt.measure(p_measure2)
+
+        verify_msmt(msmt, arrs)
+
+    def test_revert_multi_parameter(self):
+        multi_parameter = MultiParameterTest("multi_param")
+        sweep_param = Parameter("sweep_param", set_cmd=None)
+
+        with Measurement("test_multi_parameter") as msmt:
+            for k, val in enumerate(Sweep(sweep_param.sweep(0, 10, 1))):
+                msmt.measure(multi_parameter)
+
+                if k == 4:
+                    msmt.revert()
+
+                    multi_parameter.values = (2,3,4)
+                    msmt.measure(multi_parameter)
+                    multi_parameter.values = (1,2,3)
+
+        self.assertEqual(msmt.data_groups[(0, 0)].name, "multi_param")
+
+        verification_arrays = {
+            (0, 0, 0): [1] * 11,
+            (0, 0, 1): [2] * 11,
+            (0, 0, 2): [3] * 11,
+        }
+        for key, val in verification_arrays.items():
+            val[4] += 1
+
+        verify_msmt(msmt, verification_arrays=verification_arrays)
