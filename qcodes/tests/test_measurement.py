@@ -1218,3 +1218,43 @@ class TestMeasurementControl(TestCase):
             val[4] += 1
 
         verify_msmt(msmt, verification_arrays=verification_arrays)
+
+    def test_step_out(self):
+        with Measurement('test_step_out') as msmt:
+            for k in Sweep(range(5), 'outer_sweep'):
+                for kk in Sweep(range(5), 'inner_sweep'):
+                    msmt.measure(123, 'measurable')
+
+                    if kk > 2:
+                        msmt.step_out()
+                        break
+
+        verification_arrays = {
+            (0, 0, 0): 123 * np.ones((5,5)),
+        }
+        verification_arrays[(0,0,0)][:,4:] = np.nan
+
+        verify_msmt(msmt, verification_arrays=verification_arrays, allow_nan=True)
+
+    def test_step_out_multiparameter(self):
+        multi_parameter = MultiParameterTest("multi_param")
+
+        with Measurement('test_step_out_multiparameter') as msmt:
+            for k in Sweep(range(5), 'outer_sweep'):
+                for kk in Sweep(range(5), 'inner_sweep'):
+                    msmt.measure(multi_parameter)
+
+                    if kk > 2:
+                        msmt.step_out()
+                        break
+
+        verification_arrays = {
+            (0, 0, 0, 0): 1 * np.ones((5,5)),
+            (0, 0, 0, 1): 2 * np.ones((5,5)),
+            (0, 0, 0, 2): 3 * np.ones((5,5)),
+        }
+        verification_arrays[(0,0,0,0)][:,4:] = np.nan
+        verification_arrays[(0,0,0,2)][:,4:] = np.nan
+        verification_arrays[(0,0,0,1)][:,4:] = np.nan
+
+        verify_msmt(msmt, verification_arrays=verification_arrays, allow_nan=True)
