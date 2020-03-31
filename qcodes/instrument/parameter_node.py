@@ -176,8 +176,8 @@ class ParameterNode(Metadatable, DelegateAttributes, metaclass=ParameterNodeMeta
     def __str__(self):
         s = ''
         if getattr(self, 'name', None):
-            if self.parent:
-                s += f'{self.parent}_'
+            if self.parent and getattr(self.parent, 'name', None) not in [None, '']:
+                s += f'{self.parent.name}_'
             if isinstance(self.name, _BaseParameter):
                 s += f'{self.name()}'
             else:
@@ -467,7 +467,21 @@ class ParameterNode(Metadatable, DelegateAttributes, metaclass=ParameterNodeMeta
 
         return snap
 
-    def to_dict(self, get_latest=True):
+    def to_dict(self, get_latest: bool = True) -> Dict:
+        """Generate a dictionary representation of the parameter node
+
+        This method is similar to `ParameterNode.snapshot()`, but more compact.
+        Basically, every key is a parameter/parameternode name.
+        For a Parameter, the dict value is the parameter's value
+        For a ParameterNode, the value is another nested dict.
+
+        Args:
+            get_latest: Whether to add the latest value of a parameter,
+                or perform a parameter.get() to get the value.
+
+        Returns:
+            Dictionary representation of the parameter node
+        """
         if get_latest:
             parameters_dict = {
                 name: parameter.get_latest() for name, parameter in self.parameters.items()
