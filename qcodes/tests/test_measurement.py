@@ -1258,3 +1258,10 @@ class TestMeasurementControl(TestCase):
         verification_arrays[(0,0,0,1)][:,4:] = np.nan
 
         verify_msmt(msmt, verification_arrays=verification_arrays, allow_nan=True)
+
+
+class TestMeasurementFail(TestCase):
+    def test_measurement_fail_message(self):
+        with Measurement('measurement_fail') as msmt:
+            raise RuntimeError('help')
+
