@@ -49,6 +49,7 @@ class Measurement:
     _default_measurement_name = "msmt"
     _default_dataset_name = "data"
     final_actions = []
+    except_actions = []
     max_arrays = 100
 
     def __init__(self, name: str, force_cell_thread: bool = True):
@@ -81,14 +82,19 @@ class Measurement:
         # Note that there are also Measurement.final_actions, which are always
         # executed when the outermost measurement finishes
         self.final_actions = []
+        self.except_actions = []
         self._masked_properties = []
 
-    @property
-    def log(self) -> logging.Logger:
+    def log(self, message: str, level="info"):
+        assert level in ["debug", "info", "warning", "error"]
+        logger = logging.getLogger("msmt")
+        log_function = getattr(logger, level)
+
+        # Append measurement name
         if self.name is not None:
-            return logging.getLogger(f"msmt {self.name}")
-        else:
-            return logging.getLogger("msmt")
+            message += f" - {self.name}"
+
+        log_function(message)
 
     @property
     def data_groups(self) -> Dict[Tuple[int], "Measurement"]:
@@ -172,8 +178,28 @@ class Measurement:
                 Measurement.running_measurement = None
             raise
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Exception, exc_val, exc_tb):
+        """Operation when exiting a loop
+
+        Args:
+            exc_type: Type of exception, None if no exception
+            exc_val: Exception message, None if no exception
+            exc_tb: Exception traceback object, None if no exception
+
+        Returns:
+
+        """
         msmt = Measurement.running_measurement
+
+        if exc_type is not None:
+            msmt.log(f"Measurement error {exc_type}({exc_val})", level="error")
+
+            self._apply_actions(self.except_actions, label="except", clear=True)
+
+            if msmt is self:
+                self._apply_actions(
+                    Measurement.except_actions, label="global except", clear=True
+                )
 
         self._apply_actions(self.final_actions, label="final", clear=True)
 
@@ -183,15 +209,6 @@ class Measurement:
             # Also perform global final actions
             # These are always performed when outermost measurement finishes
             self._apply_actions(msmt.final_actions, label="global final")
-
-            for final_action in Measurement.final_actions:
-                try:
-                    final_action()
-                except Exception:
-                    self.log.error(
-                        f"Could not execute final action {final_action} \n"
-                        f"{traceback.format_exc()}"
-                    )
 
             Measurement.running_measurement = None
             self.dataset.finalize()
@@ -270,9 +287,9 @@ class Measurement:
 
         if len(running_measurement().data_arrays) >= self.max_arrays:
             raise RuntimeError(
-                f'Number of arrays in dataset exceeds '
-                f'Measurement.max_arrays={self.max_arrays}. Perhaps you forgot'
-                f'to encapsulate a loop with a Sweep()?'
+                f"Number of arrays in dataset exceeds "
+                f"Measurement.max_arrays={self.max_arrays}. Perhaps you forgot"
+                f"to encapsulate a loop with a Sweep()?"
             )
 
         array_kwargs = {
@@ -496,9 +513,10 @@ class Measurement:
             try:
                 action()
             except Exception as e:
-                self.log.error(
+                self.log(
                     f"Could not execute {label} action {action} \n"
-                    f"{traceback.format_exc()}"
+                    f"{traceback.format_exc()}",
+                    level="error",
                 )
 
         if clear:
@@ -851,10 +869,11 @@ class Measurement:
                 else:
                     raise SyntaxError(f"Unmask type {type} not understood")
             except Exception as e:
-                self.log.error(
+                self.log(
                     f"Could not unmask {obj} {type} from masked value {value} "
                     f"to original value {original_value}\n"
-                    f"{traceback.format_exc()}"
+                    f"{traceback.format_exc()}",
+                    level="error",
                 )
 
                 if raise_exception:
