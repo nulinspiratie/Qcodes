@@ -189,14 +189,12 @@ class Measurement:
         Returns:
 
         """
-        msmt = Measurement.running_measurement
-
         if exc_type is not None:
-            msmt.log(f"Measurement error {exc_type}({exc_val})", level="error")
+            self.log(f"Measurement error {exc_type.__name__}({exc_val})", level="error")
 
             self._apply_actions(self.except_actions, label="except", clear=True)
 
-            if msmt is self:
+            if Measurement.running_measurement is self:
                 self._apply_actions(
                     Measurement.except_actions, label="global except", clear=True
                 )
@@ -205,17 +203,17 @@ class Measurement:
 
         self.unmask_all()
 
-        if msmt is self:
+        if Measurement.running_measurement is self:
             # Also perform global final actions
             # These are always performed when outermost measurement finishes
-            self._apply_actions(msmt.final_actions, label="global final")
+            self._apply_actions(Measurement.final_actions, label="global final")
 
             Measurement.running_measurement = None
             self.dataset.finalize()
             self.dataset.active = False
 
         else:
-            msmt.step_out(reduce_dimension=False)
+            Measurement.running_measurement.step_out(reduce_dimension=False)
 
         self.is_context_manager = False
 
