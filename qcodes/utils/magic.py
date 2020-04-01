@@ -223,6 +223,11 @@ class QCoDeSMagic(Magics):
     @needs_local_scope
     @line_magic
     def tb(self, line, local_ns):
+        """View the traceback of the last measurement
+
+        This magic function is especially useful when the measurement is started
+        from a separate thread (via %%new_job).
+        """
         msmt = local_ns['msmt']
         msmt.measurement_thread.traceback()
 
