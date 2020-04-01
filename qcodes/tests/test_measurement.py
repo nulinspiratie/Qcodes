@@ -2,6 +2,7 @@ from time import sleep
 import numpy as np
 from unittest import TestCase
 from functools import partial
+import logging
 
 from qcodes.config.config import DotDict
 from qcodes import Loop, Parameter, load_data, ParameterNode, new_job, MultiParameter
@@ -1260,8 +1261,92 @@ class TestMeasurementControl(TestCase):
         verify_msmt(msmt, verification_arrays=verification_arrays, allow_nan=True)
 
 
-class TestMeasurementFail(TestCase):
-    def test_measurement_fail_message(self):
-        with Measurement('measurement_fail') as msmt:
-            raise RuntimeError('help')
+class ListHandler(logging.Handler):  # Inherit from logging.Handler
+    def __init__(self, log_list):
+        # run the regular Handler __init__
+        logging.Handler.__init__(self)
+        self.setLevel(logging.DEBUG)
+        # Our custom argument
+        self.log_list = log_list
 
+    def emit(self, record):
+        # record.message is the log message
+        self.log_list.append(record.msg)
+
+
+class TestMeasurementFail(TestCase):
+    def setUp(self):
+        logging.basicConfig(level=logging.DEBUG, format='%(message)s')
+        logger = logging.getLogger()
+        logger.level = logging.DEBUG
+        self.log_list = []
+        self.handler = ListHandler(self.log_list)
+        logging.getLogger().addHandler(self.handler)
+
+    def tearDown(self):
+        logging.getLogger().removeHandler(self.handler)
+        print('Stopped logging')
+
+        Measurement.final_actions.clear()
+        Measurement.except_actions.clear()
+
+    def test_measurement_fail_message(self):
+        with self.assertRaises(RuntimeError):
+            with Measurement('measurement_fail') as msmt:
+                raise RuntimeError('help')
+
+        self.assertTrue(any('Measurement error RuntimeError(help)' in msg for msg in self.log_list))
+
+    def test_measurement_except_final_actions(self):
+        p_except = Parameter(initial_value=42, set_cmd=None)
+        p_final = Parameter(initial_value=41, set_cmd=None)
+
+        with self.assertRaises(RuntimeError):
+            with Measurement('measurement_fail') as msmt:
+                msmt.except_actions.append(partial(p_except, 43))
+                msmt.final_actions.append(partial(p_final, 40))
+
+                raise RuntimeError('help')
+
+        self.assertEqual(p_except(), 43)
+        self.assertEqual(p_final(), 40)
+
+    def test_measurement_except_final_actions_no_fail(self):
+        p_except = Parameter(initial_value=42, set_cmd=None)
+        p_final = Parameter(initial_value=41, set_cmd=None)
+
+        with Measurement('measurement_fail') as msmt:
+            msmt.except_actions.append(partial(p_except, 43))
+            msmt.final_actions.append(partial(p_final, 40))
+
+        self.assertEqual(p_except(), 42)
+        self.assertEqual(p_final(), 40)
+
+    def test_global_Measurement_except_final_actions(self):
+        p_except = Parameter(initial_value=42, set_cmd=None)
+        p_final = Parameter(initial_value=41, set_cmd=None)
+
+        Measurement.except_actions.append(partial(p_except, 43))
+        Measurement.final_actions.append(partial(p_final, 40))
+
+        with self.assertRaises(RuntimeError):
+            with Measurement('measurement_fail') as msmt:
+                pass
+
+                raise RuntimeError('help')
+
+        self.assertEqual(p_except(), 43)
+        self.assertEqual(p_final(), 40)
+
+    def test_global_Measurement_except_final_actions_no_fail(self):
+        p_except = Parameter(initial_value=42, set_cmd=None)
+        p_final = Parameter(initial_value=41, set_cmd=None)
+
+        Measurement.except_actions.append(partial(p_except, 43))
+        Measurement.final_actions.append(partial(p_final, 40))
+
+        with Measurement('measurement_fail') as msmt:
+            pass
+
+        self.assertEqual(p_except(), 42)
+        self.assertEqual(p_final(), 40)
