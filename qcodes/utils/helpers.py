@@ -534,7 +534,8 @@ def define_func_from_string(func_name: str, code: str, shell: bool = True):
     if shell and using_ipython():
         from IPython import get_ipython
         shell = get_ipython()
-        shell.run_cell(function_code, store_history=True, silent=True)
+        result = shell.run_cell(function_code, store_history=True, silent=True)
+        result.raise_error()  # Only raises an error if the code produced one
 
         return eval(func_name, shell.user_global_ns)
     else:
