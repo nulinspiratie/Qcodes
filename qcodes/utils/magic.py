@@ -1,5 +1,12 @@
 import sys
-from IPython.core.magic import Magics, magics_class, line_cell_magic, cell_magic
+from IPython.core.magic import (
+    Magics,
+    magics_class,
+    line_cell_magic,
+    cell_magic,
+    line_magic,
+    needs_local_scope,
+)
 from IPython import get_ipython
 
 
@@ -212,6 +219,12 @@ class QCoDeSMagic(Magics):
         threading.new_job(
             function, name=thread_name, active=thread_name == threading.default_job_name
         )
+
+    @needs_local_scope
+    @line_magic
+    def tb(self, line, local_ns):
+        msmt = local_ns['msmt']
+        msmt.measurement_thread.traceback()
 
 
 def register_magic_class(cls=QCoDeSMagic, magic_commands=True):
