@@ -20,6 +20,8 @@ from qcodes.utils.helpers import (
 )
 
 
+RAW_VALUE_TYPES = (float, int, bool, np.ndarray, np.integer, np.floating, type(None))
+
 class Measurement:
     """
     Args:
@@ -627,6 +629,11 @@ class Measurement:
         # Ensure measuring callable matches the current action_indices
         self._verify_action(action=None, name=name, add_if_new=True)
 
+        if isinstance(value, np.integer):
+            value = int(value)
+        elif isinstance(value, np.floating):
+            value = float(value)
+
         result = value
         self._add_measurement_result(
             action_indices=self.action_indices,
@@ -695,6 +702,8 @@ class Measurement:
         while self.is_paused:
             sleep(0.1)
 
+
+
         # TODO Incorporate kwargs name, label, and unit, into each of these
         if isinstance(measurable, Parameter):
             result = self._measure_parameter(
@@ -707,7 +716,7 @@ class Measurement:
             result = self._measure_callable(measurable, name=name, **kwargs)
         elif isinstance(measurable, dict):
             result = self._measure_dict(measurable, name=name)
-        elif isinstance(measurable, (float, int, bool, np.ndarray, type(None))):
+        elif isinstance(measurable, RAW_VALUE_TYPES):
             result = self._measure_value(measurable, name=name, label=label, unit=unit)
             self.skip()  # Increment last action index by 1
         else:

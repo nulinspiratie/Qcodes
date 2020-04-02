@@ -283,6 +283,14 @@ class TestNewLoopBasics(TestCase):
                     with self.assertRaises(RuntimeError):
                         msmt.measure(123, 'measurable')
 
+    def test_odd_numpy_datatypes(self):
+        int_datatypes = [np.int8, np.int16, np.int32, np.int64, np.uint8, np.uint16, np.uint32, np.uint64]
+        float_datatypes = [np.float_]
+        for datatype in int_datatypes:
+            with Measurement(f'odd_datatype_{datatype.__name__}') as msmt:
+                msmt.measure(datatype(2), 'odd_value')
+
+
 
 class TestNewLoopParameterNode(TestCase):
     class DictResultsNode(ParameterNode):
