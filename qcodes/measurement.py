@@ -33,6 +33,8 @@ class Measurement:
             An error is raised if this has not been satisfied.
             Note that if the measurement is started within a function, no error
             is raised.
+        notify: Notify when measurement is complete.
+            The function `Measurement.notify_function` must be set
 
 
     Notes:
@@ -54,7 +56,11 @@ class Measurement:
     except_actions = []
     max_arrays = 100
 
-    def __init__(self, name: str, force_cell_thread: bool = True):
+    # Notification function, called if notify=True.
+    # Function should accept one argument: the measurement name
+    notify_function = None
+
+    def __init__(self, name: str, force_cell_thread: bool = True, notify=False):
         self.name = name
 
         # Total dimensionality of loop
@@ -76,6 +82,8 @@ class Measurement:
         self.is_context_manager: bool = False  # Whether used as context manager
         self.is_paused: bool = False  # Whether the Measurement is paused
         self.is_stopped: bool = False  # Whether the Measurement is stopped
+
+        self.notify = notify
 
         self.force_cell_thread = force_cell_thread and using_ipython()
 
@@ -209,6 +217,13 @@ class Measurement:
             # Also perform global final actions
             # These are always performed when outermost measurement finishes
             self._apply_actions(Measurement.final_actions, label="global final")
+
+            # Notify that measurement is complete
+            if self.notify and self.notify_function is not None:
+                try:
+                    self.notify_function(self.name, exc_type, exc_val, exc_tb)
+                except:
+                    self.log("Could not notify", level="error")
 
             Measurement.running_measurement = None
             self.dataset.finalize()
