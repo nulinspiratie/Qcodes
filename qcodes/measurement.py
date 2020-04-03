@@ -57,7 +57,9 @@ class Measurement:
     max_arrays = 100
 
     # Notification function, called if notify=True.
-    # Function should accept one argument: the measurement name
+    # Function should receive the following arguments:
+    # Measurement object, exception_type, exception_message, traceback
+    # The last three are only not None if an error has occured
     notify_function = None
 
     def __init__(self, name: str, force_cell_thread: bool = True, notify=False):
@@ -116,6 +118,10 @@ class Measurement:
     @property
     def active_action(self):
         return self.actions.get(self.action_indices, None)
+
+    @property
+    def active_action_name(self):
+        return self.action_names.get(self.action_indices, None)
 
     def __enter__(self):
         self.is_context_manager = True
