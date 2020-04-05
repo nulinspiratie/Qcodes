@@ -20,6 +20,8 @@ from qcodes.utils.helpers import (
 )
 
 
+RAW_VALUE_TYPES = (float, int, bool, np.ndarray, np.integer, np.floating, type(None))
+
 class Measurement:
     """
     Args:
@@ -31,6 +33,8 @@ class Measurement:
             An error is raised if this has not been satisfied.
             Note that if the measurement is started within a function, no error
             is raised.
+        notify: Notify when measurement is complete.
+            The function `Measurement.notify_function` must be set
 
 
     Notes:
@@ -52,7 +56,13 @@ class Measurement:
     except_actions = []
     max_arrays = 100
 
-    def __init__(self, name: str, force_cell_thread: bool = True):
+    # Notification function, called if notify=True.
+    # Function should receive the following arguments:
+    # Measurement object, exception_type, exception_message, traceback
+    # The last three are only not None if an error has occured
+    notify_function = None
+
+    def __init__(self, name: str, force_cell_thread: bool = True, notify=False):
         self.name = name
 
         # Total dimensionality of loop
@@ -74,6 +84,8 @@ class Measurement:
         self.is_context_manager: bool = False  # Whether used as context manager
         self.is_paused: bool = False  # Whether the Measurement is paused
         self.is_stopped: bool = False  # Whether the Measurement is stopped
+
+        self.notify = notify
 
         self.force_cell_thread = force_cell_thread and using_ipython()
 
@@ -106,6 +118,10 @@ class Measurement:
     @property
     def active_action(self):
         return self.actions.get(self.action_indices, None)
+
+    @property
+    def active_action_name(self):
+        return self.action_names.get(self.action_indices, None)
 
     def __enter__(self):
         self.is_context_manager = True
@@ -207,6 +223,13 @@ class Measurement:
             # Also perform global final actions
             # These are always performed when outermost measurement finishes
             self._apply_actions(Measurement.final_actions, label="global final")
+
+            # Notify that measurement is complete
+            if self.notify and self.notify_function is not None:
+                try:
+                    self.notify_function(self.name, exc_type, exc_val, exc_tb)
+                except:
+                    self.log("Could not notify", level="error")
 
             Measurement.running_measurement = None
             self.dataset.finalize()
@@ -627,6 +650,11 @@ class Measurement:
         # Ensure measuring callable matches the current action_indices
         self._verify_action(action=None, name=name, add_if_new=True)
 
+        if isinstance(value, np.integer):
+            value = int(value)
+        elif isinstance(value, np.floating):
+            value = float(value)
+
         result = value
         self._add_measurement_result(
             action_indices=self.action_indices,
@@ -695,6 +723,8 @@ class Measurement:
         while self.is_paused:
             sleep(0.1)
 
+
+
         # TODO Incorporate kwargs name, label, and unit, into each of these
         if isinstance(measurable, Parameter):
             result = self._measure_parameter(
@@ -707,7 +737,7 @@ class Measurement:
             result = self._measure_callable(measurable, name=name, **kwargs)
         elif isinstance(measurable, dict):
             result = self._measure_dict(measurable, name=name)
-        elif isinstance(measurable, (float, int, bool, np.ndarray, type(None))):
+        elif isinstance(measurable, RAW_VALUE_TYPES):
             result = self._measure_value(measurable, name=name, label=label, unit=unit)
             self.skip()  # Increment last action index by 1
         else:
