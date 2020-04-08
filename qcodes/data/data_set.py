@@ -643,7 +643,7 @@ class DataSet(DelegateAttributes):
 
     def print_measurement(self, silent: bool = False, return_str: bool = False):
         """Print the measurement cell
-        
+
         Args:
             silent: Whether to print the results
             return_str: Whether to return the measurement code as a string
@@ -674,11 +674,14 @@ class DataSet(DelegateAttributes):
         except (AttributeError, KeyError):
             return None
 
-    def get_arrays(self, name=None):
+    def get_arrays(self, name=None, full_match=True):
         arrays = self.arrays
 
         if name is not None:
-            arrays = [arr for arr in arrays.values() if arr.name == name]
+            if full_match:
+                arrays = [arr for arr in arrays.values() if arr.name == name]
+            else:
+                arrays = [arr for arr in arrays.values() if name in arr.name]
 
         return arrays
 
