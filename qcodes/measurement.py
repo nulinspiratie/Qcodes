@@ -1025,8 +1025,7 @@ class Sweep:
             action_indices[-1] = 0
             msmt.action_indices = tuple(action_indices)
         except StopIteration:  # Reached end of iteration
-            msmt.step_out(reduce_dimension=True)
-            raise StopIteration
+            self.exit_sweep()
 
         if isinstance(self.sequence, SweepValues):
             self.sequence.set(sweep_value)
@@ -1036,6 +1035,11 @@ class Sweep:
         self.loop_index += 1
 
         return sweep_value
+
+    def exit_sweep(self):
+        msmt = running_measurement()
+        msmt.step_out(reduce_dimension=True)
+        raise StopIteration
 
     def create_set_array(self):
         if isinstance(self.sequence, SweepValues):
