@@ -40,7 +40,7 @@ class LoopManagerWidget(DOMWidget):
         self.updater = UpdaterThread(self.update_widget, interval=interval)
 
     def create_widgets(self):
-        widgets = []
+        widgets = {}
 
         widgets["active_measurement_label"] = Label(value="No active measurement")
         widgets["action_label"] = Label("")
@@ -94,10 +94,8 @@ class LoopManagerWidget(DOMWidget):
 
         widgets["vbox"] = VBox(
             [
-                widget
-                for widget in widgets
-                if widget.name
-                not in ["pause_button", "stop_button", "force_stop_button"]
+                widget for name, widget in widgets.items()
+                if name not in ["pause_button", "stop_button", "force_stop_button"]
             ]
         )
         return widgets
@@ -202,6 +200,15 @@ class LoopManagerWidget(DOMWidget):
             # Update notification checkbox
             self.widgets["notify_checkbox"].value = qc.active_measurement().notify
 
+        # update layout button
+        if self.layout:
+            if self.layout.active():
+                self.widgets["layout_button"].description = "Stop Layout"
+                self.widgets["layout_button"].button_style = "danger"
+            else:
+                self.widgets["layout_button"].description = "Start Layout"
+                self.widgets["layout_button"].button_style = "success"
+
         self.update_progress_bar()
 
     def _handle_layout_button_click(self, properties):
@@ -221,8 +228,8 @@ class LoopManagerWidget(DOMWidget):
             self.widgets["layout_button"].description = "Start Layout"
             self.widgets["layout_button"].button_style = "success"
 
-        def _handle_notify_button_click(self, properties):
-            if properties["name"] == "value":
-                msmt = qc.active_measurement()
-                if msmt is not None:
-                    msmt.notify = properties["new"]
+    def _handle_notify_button_click(self, properties):
+        if properties["name"] == "value":
+            msmt = qc.active_measurement()
+            if msmt is not None:
+                msmt.notify = properties["new"]
