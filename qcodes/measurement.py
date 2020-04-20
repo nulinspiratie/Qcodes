@@ -227,7 +227,7 @@ class Measurement:
             # Notify that measurement is complete
             if self.notify and self.notify_function is not None:
                 try:
-                    self.notify_function(self.name, exc_type, exc_val, exc_tb)
+                    self.notify_function(exc_type, exc_val, exc_tb)
                 except:
                     self.log("Could not notify", level="error")
 
