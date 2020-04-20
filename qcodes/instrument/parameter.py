@@ -725,6 +725,26 @@ class _BaseParameter(Metadatable, SignalEmitter):
 
         return set_wrapper
 
+    def define_get(self, get_function, wrap=None):
+        if wrap is None:
+            wrap = self.wrap_get
+
+        self.get_raw = get_function
+        if wrap:
+            self.get =self._wrap_get(get_function)
+        else:
+            self.get = get_function
+
+    def define_set(self, set_function, wrap=None):
+        if wrap is None:
+            wrap = self.wrap_set
+
+        self.set_raw = set_function
+        if wrap:
+            self.set =self._wrap_set(set_function)
+        else:
+            self.set = set_function
+
     def get_ramp_values(self, value: Union[float, int],
                         step: Union[float, int]=None) -> List[Union[float,
                                                                     int]]:
@@ -1115,30 +1135,21 @@ class Parameter(_BaseParameter):
                 if max_val_age is not None:
                     raise SyntaxError('Must have get method or specify get_cmd '
                                       'when max_val_age is set')
-                self.get_raw = self._get_raw_value
+                self.define_get(self._get_raw_value)
             elif isinstance(get_cmd, str):
                 exec_str = getattr(self.parent, 'ask', None)
-                self.get_raw = Command(arg_count=0, cmd=get_cmd, exec_str=exec_str)
+                self.define_get(Command(arg_count=0, cmd=get_cmd, exec_str=exec_str))
             else:
-                self.get_raw = get_cmd
-            if self.wrap_get:
-                self.get = self._wrap_get(self.get_raw)
-            else:
-                self.get = self.get_raw
+                self.define_get(get_cmd)
 
         if not hasattr(self, 'set') and set_cmd is not False:
             if set_cmd is None:
-                self.set_raw = partial(self._save_val, validate=False)
+                self.define_set(partial(self._save_val, validate=False))
             elif isinstance(set_cmd, str):
                 exec_str = getattr(self.parent, 'write', None)
-                self.set_raw = Command(arg_count=1, cmd=set_cmd, exec_str=exec_str)
+                self.define_set(Command(arg_count=1, cmd=set_cmd, exec_str=exec_str))
             else:
-                self.set_raw = set_cmd
-
-            if self.wrap_set:
-                self.set = self._wrap_set(self.set_raw)
-            else:
-                self.set = self.set_raw
+                self.define_set(set_cmd)
 
         self._meta_attrs.extend(['label', 'unit', 'vals'])
 
