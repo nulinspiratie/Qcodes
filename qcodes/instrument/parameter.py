@@ -1151,7 +1151,14 @@ class Parameter(_BaseParameter):
         self.unit = unit if unit is not None else ''
 
         if initial_value is not None:
-            if hasattr(self, 'set') and self.wrap_set:
+            if (
+                    'config_link' in kwargs
+                    and kwargs.get('update_from_config')
+                    and self._latest['value'] is not None
+            ):
+                # Initial value is already set from config
+                pass
+            elif hasattr(self, 'set') and self.wrap_set:
                 self.set(initial_value, evaluate=False)
             else:
                 # No set function defined, so create a wrapper function
