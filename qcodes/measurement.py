@@ -20,7 +20,7 @@ from qcodes.utils.helpers import (
 )
 
 
-RAW_VALUE_TYPES = (float, int, bool, np.ndarray, np.integer, np.floating, type(None))
+RAW_VALUE_TYPES = (float, int, bool, np.ndarray, np.integer, np.floating, np.bool_, type(None))
 
 class Measurement:
     """
@@ -654,6 +654,8 @@ class Measurement:
             value = int(value)
         elif isinstance(value, np.floating):
             value = float(value)
+        elif isinstance(value, np.bool_):
+            value = bool(value)
 
         result = value
         self._add_measurement_result(
