@@ -863,12 +863,12 @@ class Measurement:
         obj,
         attr=None,
         key=None,
-        original_value=None,
         type=None,
         value=None,
         raise_exception=True,
+        **kwargs  # Add kwargs because original_value may be None
     ):
-        if original_value is None:
+        if 'original_value' not in kwargs:
             # No masked property passed. We collect all the masked properties
             # that satisfy these requirements and unmask each of them.
             unmask_properties = []
@@ -890,6 +890,7 @@ class Measurement:
         else:
             # A masked property has been passed, which we unmask here
             try:
+                original_value = kwargs['original_value']
                 if type == "key":
                     obj[key] = original_value
                 elif type == "attr":
