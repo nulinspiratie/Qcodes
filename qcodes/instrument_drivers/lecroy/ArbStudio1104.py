@@ -100,7 +100,7 @@ class AWGChannel(InstrumentChannel):
         assert (
             max(abs(waveform)) <= self.max_voltage()
         ), f"Waveform may not exceed {self.max_voltage()} V"
-        self._waveforms[channel - 1].append(waveform)
+        self.waveforms.append(waveform)
 
     def add_waveform(self, waveform):
         assert len(waveform) % 2 == 0, "Waveform must have an even number of points"
@@ -181,7 +181,7 @@ class AWGChannel(InstrumentChannel):
             )
 
     def clear_waveforms(self):
-        self.parent_waveforms[self.id - 1].clear()
+        self.waveforms.clear()
 
 
 class ArbStudio1104(Instrument):
@@ -288,11 +288,6 @@ class ArbStudio1104(Instrument):
             set_cmd=None,
             vals=vals.Enum("start", "stop", "ignore"),
         )
-
-    # TODO
-    # @property
-    # def waveforms(self):
-    #     return [self.chan]
 
     def initialize(self):
         # Create empty array of four channels.
