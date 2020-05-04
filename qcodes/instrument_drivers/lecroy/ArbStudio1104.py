@@ -1,10 +1,8 @@
-import os
 import clr  # Import pythonnet to talk to dll
 from System import Array
 import numpy as np
 import numbers
 from time import sleep
-from functools import partial
 from qcodes.instrument.base import Instrument
 from qcodes.instrument.parameter import Parameter
 from qcodes.instrument.parameter_node import parameter
@@ -22,6 +20,7 @@ class AWGChannel(InstrumentChannel):
 
         self.id = id
         self.channel_api = channel_api
+        self._api = self.parent._api
 
         self.trigger_mode = Parameter(
             label=f"Channel {id} trigger mode",
@@ -40,15 +39,36 @@ class AWGChannel(InstrumentChannel):
             vals=vals.MultiType(vals.Multiples(2), vals.Enum(1)),
         )
 
+        self.max_voltage = Parameter(
+            label="Maximum waveform voltage",
+            unit="V",
+            set_cmd=None,
+            initial_value=6,
+            vals=vals.Numbers(),
+            docstring="Maximum waveform voltage. Any waveform added cannot have"
+            "a voltage higher than this.",
+        )
+
         self.sequence = Parameter(
             label=f"Channel {id} Sequence",
             set_cmd=None,
             initial_value=[],
             vals=vals.Anything(),
+            log_changes=False,
+            snapshot_value=False,
         )  # Can we test for an (int, int) tuple list?
 
+        # Keep actual waveforms hidden so they cannot be directly set
+        # i.e. arbstudio.waveforms = waveform_list  # Raises an error
+        # waveforms should be added via arbstudio.add_waveform
+        self._waveforms = []
+
+    @property
+    def waveforms(self):
+        return self._waveforms
+
     @parameter
-    def trigger_mode_set(self, trigger_mode):
+    def trigger_mode_set(self, parameter, trigger_mode):
         # Create dictionary with possible TriggerMode objects
         trigger_modes = {
             "single": self._api.TriggerMode.Single,
@@ -64,7 +84,7 @@ class AWGChannel(InstrumentChannel):
         )
 
     @parameter
-    def trigger_source_set(self, trigger_source):
+    def trigger_source_set(self, parameter, trigger_source):
         if trigger_source == "internal":
             self.parent.call_dll(
                 self.channel_api.SetInternalTrigger,
@@ -74,9 +94,9 @@ class AWGChannel(InstrumentChannel):
             # Collect external trigger arguments
             trigger_source = self.parent._trigger_sources[trigger_source]
             trigger_sensitivity_edge = self.parent._trigger_sensitivity_edges[
-                self.trigger_sensitivity_edge()
+                self.parent.trigger_sensitivity_edge()
             ]
-            trigger_action = self.parent._trigger_actions[self.trigger_action()]
+            trigger_action = self.parent._trigger_actions[self.parent.trigger_action()]
 
             self.parent.call_dll(
                 self.channel_api.SetExternalTrigger,
@@ -87,20 +107,12 @@ class AWGChannel(InstrumentChannel):
             )
 
     @parameter
-    def sampling_rate_prescaler_get(self):
+    def sampling_rate_prescaler_get(self, parameter):
         return self.channel_api.SampligRatePrescaler  # Typo is intentional
 
     @parameter
-    def sampling_rate_prescaler_set(self, prescaler):
+    def sampling_rate_prescaler_set(self, parameter, prescaler):
         self.channel_api.SampligRatePrescaler = prescaler  # Typo is intentional
-
-    def _add_waveform(self, channel, waveform):
-        assert len(waveform) % 2 == 0, "Waveform must have an even number of points"
-        assert len(waveform) > 2, "Waveform must have at least four points"
-        assert (
-            max(abs(waveform)) <= self.max_voltage()
-        ), f"Waveform may not exceed {self.max_voltage()} V"
-        self.waveforms.append(waveform)
 
     def add_waveform(self, waveform):
         assert len(waveform) % 2 == 0, "Waveform must have an even number of points"
@@ -113,7 +125,7 @@ class AWGChannel(InstrumentChannel):
     def load_waveforms(self):
         if not self.waveforms:
             # Must have at least one waveform, add one with 0V
-            self.waveforms = [np.array([0, 0, 0, 0])]
+            self.add_waveform(np.array([0, 0, 0, 0]))
 
         # Initialize array of waves
         waveforms = Array.CreateInstance(self._api.WaveformStruct, len(self.waveforms))
@@ -133,7 +145,7 @@ class AWGChannel(InstrumentChannel):
         # Check if sequence consists of repetitions of a subsequence
 
         sequence = self.sequence()
-        if "divisors" in self.optimize:
+        if "divisors" in self.parent.optimize:
             try:
                 N = len(sequence)
                 divisors = [n for n in reversed(np.arange(2, N + 1)) if N % n == 0]
@@ -148,7 +160,7 @@ class AWGChannel(InstrumentChannel):
 
         self.sequence = sequence
 
-        sequence = Array.CreateInstance(
+        sequence_obj = Array.CreateInstance(
             self._api.GenerationSequenceStruct, len(sequence)
         )
         for k, subsequence_info in enumerate(sequence):
@@ -168,13 +180,13 @@ class AWGChannel(InstrumentChannel):
                 raise TypeError(
                     "A subsequence must be either an int or (int, int) tuple"
                 )
-            sequence[k] = subsequence
+            sequence_obj[k] = subsequence
 
             # Set transfermode to USB (seems to be a fixed function)
             transfer_mode = Array.CreateInstance(self._api.TransferMode, 1)
             self.parent.call_dll(
                 self.channel_api.LoadGenerationSequence,
-                sequence,
+                sequence_obj,
                 transfer_mode[0],
                 True,
                 msg="loading sequence",
@@ -258,16 +270,6 @@ class ArbStudio1104(Instrument):
         self.right_frequency_interpolation = Parameter(
             set_cmd=self._device.PairRight.SetFrequencyInterpolation,
             vals=vals.Enum(1, 2, 4),
-        )
-
-        self.max_voltage = Parameter(
-            label="Maximum waveform voltage",
-            unit="V",
-            set_cmd=None,
-            initial_value=6,
-            vals=vals.Numbers(),
-            docstring="Maximum waveform voltage. Any waveform added cannot have"
-            "a voltage higher than this.",
         )
 
         # TODO Need to implement frequency interpolation for channel pairs
@@ -356,7 +358,8 @@ class ArbStudio1104(Instrument):
 
         # A stop command seems to reset trigger sources. For the channels that had a trigger source,
         # this will reset it to its previoius value
-        for ch in range(1, 5):
-            trigger_source = self.channels[ch].trigger_source.get_latest()
+        for channel in self.channels:
+            trigger_source = channel.trigger_source.get_latest()
             if trigger_source:
-                self.channels[ch].trigger_source(trigger_source)
+                channel.trigger_source(trigger_source)
+
