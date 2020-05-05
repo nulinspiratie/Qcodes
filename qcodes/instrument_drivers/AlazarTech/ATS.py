@@ -1,4 +1,6 @@
+import socket
 import ctypes
+from ctypes import wintypes as wt
 import logging
 import numpy as np
 import os
@@ -258,6 +260,46 @@ class AlazarTech_ATS(Instrument):
         self.add_parameter(name='maximum_samples',
                            set_cmd=None,
                            initial_value=max_s)
+
+        # Buffers can be pre-allocated using ATS.preallocate_buffers.
+        # See docstring for details
+        self._preallocated_buffers = []
+
+    def preallocate_buffers(self, num_buffers: int, samples_per_buffer: int):
+        """Pre-allocate buffers for acquisition
+
+        This method is especially useful when using 64-bit Python.
+        In this case, the buffer memory address can exceed 32 bits, which
+        causes an error because the ATS cannot handle such memory addresses.
+        This issue appears more frequently for long acquisitions.
+
+        If the buffers are pre-allocated at the start of a Python session,
+        there is a much higher chance that a memory address is available below
+        32 bits (the lowest available memory address is chosen).
+
+        Args:
+            num_buffers: Number of buffers to pre-allocate.
+                An error will be raised in an acquisition if the number of
+                required buffers does not match the number of pre-allocated buffers.
+            samples_per_buffer: Samples per buffer for each channel.
+                An error will be raised in an acquisition if the required
+                samples_per_buffer exceeds the value given here.
+                This value should therefore be chosen well above the expected
+                maximum number of samples per buffer.
+
+        Returns:
+            Pre-allocated buffer list
+        """
+        assert all(not buffer._allocated for buffer in self._preallocated_buffers)
+
+        self._preallocated_buffers = [
+            Buffer(
+                bits_per_sample=self.bits_per_sample(),
+                samples_per_buffer=int(samples_per_buffer),
+                number_of_channels=len(self.channels)
+            )
+            for _ in range(num_buffers)
+        ]
 
     def get_idn(self):
         """
@@ -601,7 +643,8 @@ class AlazarTech_ATS(Instrument):
         self.get_processed_data._set_updated()
 
         # create buffers for acquisition
-        self.clear_buffers()
+        self.clear_buffers(free_memory=(not self._preallocated_buffers))
+
         # make sure that allocated_buffers <= buffers_per_acquisition and
         # buffer acquisition is not in acquire indefinite mode (0x7FFFFFFF)
         if (not self.buffers_per_acquisition._get_byte() == 0x7FFFFFFF) and \
@@ -616,19 +659,34 @@ class AlazarTech_ATS(Instrument):
 
         allocated_buffers = self.allocated_buffers._get_byte()
 
-        for k in range(allocated_buffers):
-            try:
-                self.buffer_list.append(Buffer(self.bits_per_sample(),
-                                               samples_per_buffer,
-                                               number_of_channels))
-            except:
-                self.clear_buffers()
-                raise
+        try:
+            if self._preallocated_buffers:
+                # Buffers are already pre-allocated
+                assert allocated_buffers == len(self._preallocated_buffers)
+                max_samples = self._preallocated_buffers[0].samples_per_buffer
+                assert samples_per_buffer <= max_samples
+
+                # format the numpy array to a subset of the allocated memory
+                for buffer in self._preallocated_buffers:
+                    buffer.create_array(samples_per_buffer=samples_per_buffer)
+                    self.buffer_list.append(buffer)
+            else:
+                # Create new buffers
+                for k in range(allocated_buffers):
+                    buffer = Buffer(
+                        self.bits_per_sample(),
+                        samples_per_buffer,
+                        number_of_channels
+                    )
+                    self.buffer_list.append(buffer)
+        except:
+            self.clear_buffers(free_memory=(not self._preallocated_buffers))
+            raise
 
         # post buffers to Alazar
-        for buf in self.buffer_list:
+        for buffer in self.buffer_list:
             self._call_dll('AlazarPostAsyncBuffer',
-                           self._handle, buf.addr, buf.size_bytes)
+                           self._handle, buffer.addr, buffer.size_bytes)
         self.allocated_buffers._set_updated()
 
         # -----start capture here-----
@@ -650,10 +708,10 @@ class AlazarTech_ATS(Instrument):
              self.allocated_buffers._get_byte())
 
         while acquisition_controller.requires_buffer(buffers_completed):
-            buf = self.buffer_list[buffers_completed % allocated_buffers]
+            buffer = self.buffer_list[buffers_completed % allocated_buffers]
 
             self._call_dll('AlazarWaitAsyncBufferComplete',
-                           self._handle, buf.addr, buffer_timeout)
+                           self._handle, buffer.addr, buffer_timeout)
 
             # TODO(damazter) (C) last series of buffers must be handled
             # exceptionally
@@ -663,9 +721,9 @@ class AlazarTech_ATS(Instrument):
             # if buffers must be recycled, extract data and repost them
             # otherwise continue to next buffer
             if buffer_recycling:
-                acquisition_controller.handle_buffer(buf.buffer)
+                acquisition_controller.handle_buffer(buffer.buffer)
                 self._call_dll('AlazarPostAsyncBuffer',
-                               self._handle, buf.addr, buf.size_bytes)
+                               self._handle, buffer.addr, buffer.size_bytes)
             buffers_completed += 1
 
         # stop measurement here
@@ -674,11 +732,11 @@ class AlazarTech_ATS(Instrument):
         # -----cleanup here-----
         # extract data if not yet done
         if not buffer_recycling:
-            for buf in self.buffer_list:
-                acquisition_controller.handle_buffer(buf.buffer)
+            for buffer in self.buffer_list:
+                acquisition_controller.handle_buffer(buffer.buffer)
 
-        # free up memory
-        self.clear_buffers()
+        # free up memory if not using preallocated buffers
+        self.clear_buffers(free_memory=(not self._preallocated_buffers))
 
         # check if all parameters are up to date
         for p in self.parameters.values():
@@ -772,15 +830,16 @@ class AlazarTech_ATS(Instrument):
         for param in update_params:
             param._set_updated()
 
-    def clear_buffers(self):
+    def clear_buffers(self, free_memory=True):
         """
         This method uncommits all buffers that were committed by the driver.
         This method only has to be called when the acquistion crashes, otherwise
         the driver will uncommit the buffers itself
         :return: None
         """
-        for b in self.buffer_list:
-            b.free_mem()
+        if free_memory:
+            for b in self.buffer_list:
+                b.free_mem()
         self.buffer_list = []
 
     def signal_to_volt(self, channel, signal):
@@ -935,54 +994,117 @@ class Buffer:
         number_of_channels: the number of channels that will be stored in the
             buffer
     """
+    logger = False
+
     def __init__(self, bits_per_sample, samples_per_buffer,
                  number_of_channels):
+
         if os.name != 'nt':
             raise Exception("Buffer: only Windows supported at this moment")
+
+        self.samples_per_buffer = samples_per_buffer
+        self.number_of_channels = number_of_channels
+
         self._allocated = True
 
-        bytes_per_sample = int((bits_per_sample + 7)//8)
-        np_sample_type = {1: np.uint8,
-                          2: np.uint16}[bytes_per_sample]
+        self.bytes_per_sample = int((bits_per_sample + 7)//8)
+        self.np_sample_type = {1: np.uint8, 2: np.uint16}[self.bytes_per_sample]
 
         # try to allocate memory
         mem_commit = 0x1000
         page_readwrite = 0x4
 
-        self.size_bytes = bytes_per_sample * samples_per_buffer * \
+        self.size_bytes = self.bytes_per_sample * samples_per_buffer * \
                           number_of_channels
 
         # for documentation please see:
         # https://msdn.microsoft.com/en-us/library/windows/desktop/aa366887(v=vs.85).aspx
-        ctypes.windll.kernel32.VirtualAlloc.argtypes = [
-            ctypes.c_void_p, ctypes.c_long, ctypes.c_long, ctypes.c_long]
-        ctypes.windll.kernel32.VirtualAlloc.restype = ctypes.c_void_p
-        self.addr = ctypes.windll.kernel32.VirtualAlloc(
-            0, ctypes.c_long(self.size_bytes), mem_commit, page_readwrite)
+        # https://stackoverflow.com/questions/61590363/enforce-virtualalloc-address-less-than-32-bits-on-64-bit-machine
+        VirtualAlloc = ctypes.windll.kernel32.VirtualAlloc
+        VirtualAlloc.argtypes = [wt.LPVOID, ctypes.c_size_t, wt.DWORD, wt.DWORD]
+        VirtualAlloc.restype = wt.LPVOID
+
+        self.addr = VirtualAlloc(
+            0,
+            ctypes.c_size_t(self.size_bytes), 
+            mem_commit, 
+            page_readwrite
+        )
+
+        # Log buffer information
+        if self.logger:
+            address_bits = None if self.addr is None else round(self.addr/2**32, 3)
+            message = (
+                f'Created buffer '
+                f'addr: {self.addr}, '
+                f'addr/2**32: {address_bits}, '
+                f'allocated: {self._allocated}, '
+                f'bytes_per_sample: {self.bytes_per_sample}, '
+                f'sample_type: {self.np_sample_type}, '
+                f'size_bytes: {self.size_bytes}, '
+            )
+            if isinstance(self.logger, socket.socket):
+                # Send message to a socket
+                self.logger.send((message + '\n').encode())
+            else:
+                # Write message to a file
+                self.logger.write(message)
+                self.logger.flush()
+
         if self.addr is None:
             self._allocated = False
             e = ctypes.windll.kernel32.GetLastError()
             raise Exception("Memory allocation error: " + str(e))
+        elif self.addr // 2**31:
+            raise Exception(
+                'Memory allcation address exceeds 32 bits. '
+                'Raising error to avoid BSOD'
+            )
 
-        ctypes_array = (ctypes.c_uint8 *
-                        self.size_bytes).from_address(self.addr)
-        self.buffer = np.frombuffer(ctypes_array, dtype=np_sample_type)
+        self.buffer = self.create_array()
         pointer, read_only_flag = self.buffer.__array_interface__['data']
 
-    def free_mem(self):
+    def create_array(self, samples_per_buffer: int = None):
+        """Create a numpy array from (a subset of) the allocated memory
+
+        Args:
+            samples_per_buffer: Number of buffer samples.
+                Must be less than or equal to the samples_per_buffer used to
+                initialize the Buffer.
+                If not set, will use the entire allocated memory
+
+        Returns:
+            Numpy buffer array
+        """
+        if samples_per_buffer is not None:
+            assert samples_per_buffer <= self.samples_per_buffer
+
+            size_bytes = self.bytes_per_sample * samples_per_buffer * \
+                          self.number_of_channels
+        else:
+            size_bytes = self.size_bytes
+
+        ctypes_array = (ctypes.c_uint8 * size_bytes).from_address(self.addr)
+        self.buffer = np.frombuffer(ctypes_array, dtype=self.np_sample_type)
+
+        return self.buffer
+
+    def free_mem(self, addr=None):
         """
         uncommit memory allocated with this buffer object
         :return: None
         """
         mem_release = 0x8000
 
+        if addr is None:
+            addr = self.addr
+
         # for documentation please see:
         # https://msdn.microsoft.com/en-us/library/windows/desktop/aa366892(v=vs.85).aspx
         ctypes.windll.kernel32.VirtualFree.argtypes = [
             ctypes.c_void_p, ctypes.c_long, ctypes.c_long]
         ctypes.windll.kernel32.VirtualFree.restype = ctypes.c_int
-        ctypes.windll.kernel32.VirtualFree(ctypes.c_void_p(self.addr), 0,
-                                           mem_release)
+        ctypes.windll.kernel32.VirtualFree(ctypes.c_void_p(addr), 0, mem_release)
         self._allocated = False
 
     def __del__(self):
@@ -1221,7 +1343,7 @@ class ATSAcquisitionParameter(MultiParameter):
                 or self.acquisition_controller.channel_selection is None:
             return ['']
         else:
-            return tuple(['ch{}_signal'.format(ch) for ch in
+            return tuple([f'ch{ch}_signal' for ch in
                           self.acquisition_controller.channel_selection])
 
     @names.setter
