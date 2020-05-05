@@ -662,12 +662,12 @@ class AlazarTech_ATS(Instrument):
         try:
             if self._preallocated_buffers:
                 # Buffers are already pre-allocated
-                assert allocated_buffers == len(self._preallocated_buffers)
+                assert allocated_buffers <= len(self._preallocated_buffers)
                 max_samples = self._preallocated_buffers[0].samples_per_buffer
                 assert samples_per_buffer <= max_samples
 
                 # format the numpy array to a subset of the allocated memory
-                for buffer in self._preallocated_buffers:
+                for buffer in self._preallocated_buffers[:allocated_buffers]:
                     buffer.create_array(samples_per_buffer=samples_per_buffer)
                     self.buffer_list.append(buffer)
             else:
