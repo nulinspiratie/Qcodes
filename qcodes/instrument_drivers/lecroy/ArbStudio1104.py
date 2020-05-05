@@ -182,15 +182,15 @@ class AWGChannel(InstrumentChannel):
                 )
             sequence_obj[k] = subsequence
 
-            # Set transfermode to USB (seems to be a fixed function)
-            transfer_mode = Array.CreateInstance(self._api.TransferMode, 1)
-            self.parent.call_dll(
-                self.channel_api.LoadGenerationSequence,
-                sequence_obj,
-                transfer_mode[0],
-                True,
-                msg="loading sequence",
-            )
+        # Set transfermode to USB (seems to be a fixed function)
+        transfer_mode = Array.CreateInstance(self._api.TransferMode, 1)
+        self.parent.call_dll(
+            self.channel_api.LoadGenerationSequence,
+            sequence_obj,
+            transfer_mode[0],
+            True,
+            msg="loading sequence",
+        )
 
     def clear_waveforms(self):
         self.waveforms.clear()
