@@ -283,6 +283,36 @@ class TestNewLoopBasics(TestCase):
                     with self.assertRaises(RuntimeError):
                         msmt.measure(123, 'measurable')
 
+    def test_odd_numpy_datatypes(self):
+        int_datatypes = [np.int8, np.int16, np.int32, np.int64, np.uint8, np.uint16, np.uint32, np.uint64]
+        float_datatypes = [np.float_]
+        for datatype in int_datatypes:
+            with Measurement(f'odd_datatype_{datatype.__name__}') as msmt:
+                msmt.measure(datatype(2), 'odd_value')
+
+    def test_notify(self):
+        try:
+            is_notified = []
+            Measurement.notify_function = lambda msmt, *args: is_notified.append(msmt.name)
+
+            with Measurement('notify_msmt'):
+                pass
+
+            self.assertListEqual(is_notified, [])
+
+            with Measurement('notify_msmt', notify=True) as msmt:
+                pass
+
+            self.assertListEqual(is_notified, ['notify_msmt'])
+
+            with self.assertRaises(RuntimeError):
+                with Measurement('notify_msmt_exception', notify=True) as msmt:
+                    raise RuntimeError
+
+            self.assertListEqual(is_notified, ['notify_msmt', 'notify_msmt_exception'])
+
+        finally:
+            Measurement.notify_function = None
 
 class TestNewLoopParameterNode(TestCase):
     class DictResultsNode(ParameterNode):

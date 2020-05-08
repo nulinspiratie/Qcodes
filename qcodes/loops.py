@@ -450,6 +450,11 @@ class ActiveLoop(Metadatable):
         # Loop won't stop while paused
         ActiveLoop.resume()
 
+    @property
+    def active_action_name(self):
+        active_action = ActiveLoop.active_action
+        return getattr(active_action, 'name', '')
+
     def then(self, *actions, overwrite=False):
         """
         Attach actions to be performed after the loop completes.
