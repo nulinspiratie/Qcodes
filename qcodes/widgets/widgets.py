@@ -171,7 +171,7 @@ class LoopManagerWidget(DOMWidget):
         # Clear any error messages that mess up the sidebar
         sys.stdout.flush()
 
-        if not qc.active_measurement():
+        if not qc.active_measurement() or qc.active_dataset() is None:
             self.widgets["active_measurement_label"].value = "No active measurement"
             self.widgets["pause_button"].icon = "pause"
             self.widgets["loop_indices_label"].value = ""
