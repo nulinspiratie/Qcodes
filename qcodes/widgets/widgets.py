@@ -35,8 +35,6 @@ class LoopManagerWidget(DOMWidget):
         # Maximum time difference between successive button presses
         self._layout_button_double_press_dt_max = 0.4
 
-        global _layout_button_last_pressed, max_t_press_diff
-
         self.updater = UpdaterThread(self.update_widget, interval=interval)
 
     def create_widgets(self):
@@ -171,7 +169,7 @@ class LoopManagerWidget(DOMWidget):
         # Clear any error messages that mess up the sidebar
         sys.stdout.flush()
 
-        if not qc.active_measurement():
+        if not qc.active_measurement() or qc.active_dataset() is None:
             self.widgets["active_measurement_label"].value = "No active measurement"
             self.widgets["pause_button"].icon = "pause"
             self.widgets["loop_indices_label"].value = ""
@@ -215,9 +213,9 @@ class LoopManagerWidget(DOMWidget):
         if properties["name"] != "value":
             return
 
-        t_press_diff = time.perf_counter() - self._layout_button_double_press_dt_max
-        if t_press_diff > max_t_press_diff:
-            _layout_button_last_pressed = time.perf_counter()
+        t_press_diff = time.perf_counter() - self._layout_button_last_pressed
+        if t_press_diff > self._layout_button_double_press_dt_max:
+            self._layout_button_last_pressed = time.perf_counter()
             self.widgets["layout_button"].value = properties["old"]
         elif properties["new"]:
             self.layout.start()
