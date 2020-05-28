@@ -84,15 +84,18 @@ def active_dataset():
 
 
 def pause():
-    active_measurement().pause()
+    if active_measurement() is not None:
+        active_measurement().pause()
 
 
 def resume():
-    active_measurement().resume()
+    if active_measurement() is not None:
+        active_measurement().resume()
 
 
 def stop():
-    active_measurement().stop()
+    if active_measurement() is not None:
+        active_measurement().stop()
 
 
 class Loop(Metadatable):

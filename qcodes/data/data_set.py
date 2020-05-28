@@ -674,19 +674,40 @@ class DataSet(DelegateAttributes):
         except (AttributeError, KeyError):
             return None
 
-    def get_arrays(self, name=None, full_match=True):
-        arrays = self.arrays
+    def get_arrays(
+            self,
+            name: bool = None,
+            full_match: bool = True,
+            action_indices: tuple = None
+    ):
+        """Get arrays matching criteria
+
+        Args:
+            name: array name
+            full_match: Whether the array name should exactly match ``name``.
+                If False, the array name should contain ``name``
+            action_indices: All array action indices must start with the provided
+                indices.
+        """
+        arrays = list(self.arrays.values())
 
         if name is not None:
             if full_match:
-                arrays = [arr for arr in arrays.values() if arr.name == name]
+                arrays = [arr for arr in arrays if arr.name == name]
             else:
-                arrays = [arr for arr in arrays.values() if name in arr.name]
+                arrays = [arr for arr in arrays if name in arr.name]
+
+        if action_indices is not None:
+            action_indices = tuple(action_indices)
+            arrays = [
+                arr for arr in arrays
+                if arr.action_indices[:len(action_indices)] == action_indices
+            ]
 
         return arrays
 
-    def get_array(self, name=None) -> DataArray:
-        arrays = self.get_arrays(name=name)
+    def get_array(self, name=None, action_indices=None) -> DataArray:
+        arrays = self.get_arrays(name=name, action_indices=action_indices)
         if not arrays:
             raise RuntimeError(f"Could not find any array with name {name}")
         elif len(arrays) > 1:
