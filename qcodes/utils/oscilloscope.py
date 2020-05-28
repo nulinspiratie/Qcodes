@@ -248,7 +248,5 @@ class OscilloscopeProcess():
 
             self.t_last_update = time.perf_counter()
 
-            print('Updated arrays')
-
         except Exception:
             print(traceback.format_exc())
