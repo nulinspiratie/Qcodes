@@ -212,6 +212,12 @@ class Measurement:
         Returns:
 
         """
+        msmt = Measurement.running_measurement
+        if msmt is self:
+            # Immediately unregister measurement as main measurement, in case
+            # an error occurs during final actions.
+            Measurement.running_measurement = None
+
         if exc_type is not None:
             self.log(f"Measurement error {exc_type.__name__}({exc_val})", level="error")
 
@@ -238,7 +244,6 @@ class Measurement:
                 except:
                     self.log("Could not notify", level="error")
 
-            Measurement.running_measurement = None
             self.dataset.finalize()
             self.dataset.active = False
 
