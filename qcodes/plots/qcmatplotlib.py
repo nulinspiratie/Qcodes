@@ -460,8 +460,8 @@ class MatPlot(BasePlot):
         data_arrays = [data_array.get_array() for data_array in ax.collections]
         if clim is None:
             # Get color limits as min/max of all existing plotted 2D arrays
-            clim = [np.min([np.nanmin(data_array) for data_array in data_arrays]),
-                    np.max([np.nanmax(data_array) for data_array in data_arrays])]
+            clim = [np.min([np.nanmin(data_array) for data_array in data_arrays if data_array is not None]),
+                    np.max([np.nanmax(data_array) for data_array in data_arrays if data_array is not None])]
 
         # Update color limits for all plotted 2D arrays
         for mesh in ax.collections:
