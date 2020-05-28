@@ -72,28 +72,35 @@ def __deepcopy__(self, memodict={}):
         for attr in restore_attrs:
             delattr(self, attr)
         for parameter_name in skipped_parameters:
-            self.parameters[parameter_name]._latest = {'value': None, 'ts': None, 'raw_value': None}
+            latest_value = self.parameters[parameter_name]._latest['value']
+            if isinstance(latest_value, list):
+                val = []
+            elif isinstance(latest_value, tuple):
+                val = ()
+            else:
+                val = None
+            self.parameters[parameter_name]._latest = {'value': val, 'ts': None, 'raw_value': val}
             self.parameters[parameter_name].raw_value = None
 
         self_copy = deepcopy(self)
-
-        # Move deepcopy method to the instance scope, since it will temporarily
-        # delete its own method during copying (see ParameterNode.__deepcopy__)
-        self_copy.__deepcopy__ = partial(__deepcopy__, self_copy)
-        self_copy.parent = None  # No parent by default
-
-        for parameter_name, parameter in self_copy.parameters.items():
-            if parameter_name in self._parameter_decorators:
-                parameter_decorators = self._parameter_decorators[parameter_name]
-                self_copy._attach_parameter_decorators(parameter, parameter_decorators)
-
-        return self_copy
     finally:
         for attr_name, attr in restore_attrs.items():
             setattr(self, attr_name, attr)
         for parameter_name, val in skipped_parameters.items():
             self.parameters[parameter_name]._latest = val['latest']
             self.parameters[parameter_name].raw_value= val['raw_value']
+
+    # Move deepcopy method to the instance scope, since it will temporarily
+    # delete its own method during copying (see ParameterNode.__deepcopy__)
+    self_copy.__deepcopy__ = partial(__deepcopy__, self_copy)
+    self_copy.parent = None  # No parent by default
+
+    for parameter_name, parameter in self_copy.parameters.items():
+        if parameter_name in self._parameter_decorators:
+            parameter_decorators = self._parameter_decorators[parameter_name]
+            self_copy._attach_parameter_decorators(parameter, parameter_decorators)
+
+    return self_copy
 
 
 class ParameterNode(Metadatable, DelegateAttributes, metaclass=ParameterNodeMetaClass):
@@ -405,7 +412,9 @@ class ParameterNode(Metadatable, DelegateAttributes, metaclass=ParameterNodeMeta
         self.submodules[name] = submodule
 
     def snapshot_base(self, update: bool=False,
-                      params_to_skip_update: Sequence[str]=None):
+                      params_to_skip_update: Sequence[str]=None,
+                      skip_parameters: Sequence[str] = (),
+                      skip_parameter_nodes: Sequence[str] = ()):
         """
         State of the instrument as a JSON-compatible dict.
 
@@ -416,6 +425,8 @@ class ParameterNode(Metadatable, DelegateAttributes, metaclass=ParameterNodeMeta
                 in update even if update is True. This is useful if you have
                 parameters that are slow to update but can be updated in a
                 different way (as in the qdac)
+            skip_parameters: Names of parameters to skip from snapshot
+            skip_parameter_nodes: Names of parameter nodes to skip from snapshot
 
         Returns:
             dict: base snapshot
@@ -429,6 +440,8 @@ class ParameterNode(Metadatable, DelegateAttributes, metaclass=ParameterNodeMeta
                 snap["submodules"] = {name: subm.snapshot(update=update)
                                       for name, subm in self.submodules.items()}
             for parameter_name, parameter in self.parameters.items():
+                if parameter_name in skip_parameters:
+                    continue
                 parameter_snapshot = parameter.snapshot()
                 if 'unit' in parameter_snapshot:
                     parameter_name = f'{parameter_name} ({parameter_snapshot["unit"]})'
@@ -437,6 +450,8 @@ class ParameterNode(Metadatable, DelegateAttributes, metaclass=ParameterNodeMeta
                 else:
                     snap[parameter_name] = parameter_snapshot
             for parameter_node_name, parameter_node in self.parameter_nodes.items():
+                if parameter_node_name in skip_parameter_nodes:
+                    continue
                 snap[parameter_node_name] = parameter_node.snapshot()
         else:
             snap = {
@@ -446,11 +461,16 @@ class ParameterNode(Metadatable, DelegateAttributes, metaclass=ParameterNodeMeta
                                for name, subm in self.submodules.items()},
                 "__class__": full_class(self),
                 "parameters": {},
-                "parameter_nodes": {name: node.snapshot()
-                                    for name, node in self.parameter_nodes.items()}
+                "parameter_nodes": {
+                    name: node.snapshot()
+                    for name, node in self.parameter_nodes.items()
+                    if name not in skip_parameter_nodes
+                }
             }
 
             for name, param in self.parameters.items():
+                if name in skip_parameters:
+                    continue
                 update = update
                 if params_to_skip_update and name in params_to_skip_update:
                     update = False
