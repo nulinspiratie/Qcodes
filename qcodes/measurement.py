@@ -143,7 +143,8 @@ class Measurement:
                 self.dataset.active = True
 
                 self._initialize_metadata(self.dataset)
-                self.dataset.save_metadata()
+                with self.timings.record('save_metadata'):
+                    self.dataset.save_metadata()
 
                 # Initialize attributes
                 self.loop_shape = ()
@@ -368,7 +369,8 @@ class Measurement:
         data_array.init_data()
 
         self.dataset.add_array(data_array)
-        self.dataset.save_metadata()
+        with self.timings.record('save_metadata'):
+            self.dataset.save_metadata()
 
         # Add array to set_arrays or to data_arrays of this Measurement
         if is_setpoint:
