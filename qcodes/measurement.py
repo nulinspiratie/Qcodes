@@ -1,11 +1,9 @@
-import sys
 import numpy as np
 from typing import List, Tuple, Union, Sequence, Dict, Any, Callable, Iterable
 import threading
-from time import sleep
+from time import sleep, perf_counter
 import traceback
 import logging
-from functools import partial
 
 from qcodes.station import Station
 from qcodes.data.data_set import new_data, DataSet
@@ -17,6 +15,7 @@ from qcodes.utils.helpers import (
     using_ipython,
     directly_executed_from_cell,
     get_last_input_cells,
+    PerformanceTimer
 )
 
 
@@ -65,6 +64,9 @@ class Measurement:
     def __init__(self, name: str, force_cell_thread: bool = True, notify=False):
         self.name = name
 
+        # Dataset is created during `with Measurement('name')`
+        self.dataset = None
+
         # Total dimensionality of loop
         self.loop_shape: Union[Tuple[int], None] = None
 
@@ -96,6 +98,8 @@ class Measurement:
         self.final_actions = []
         self.except_actions = []
         self._masked_properties = []
+
+        self.timings = PerformanceTimer()
 
     def log(self, message: str, level="info"):
         assert level in ["debug", "info", "warning", "error"]
@@ -148,6 +152,8 @@ class Measurement:
                 self.data_arrays = {}
                 self.set_arrays = {}
 
+                self.log('Measurement started')
+
             else:
                 if threading.current_thread() is not Measurement.measurement_thread:
                     raise RuntimeError(
@@ -186,6 +192,7 @@ class Measurement:
                 shell = get_ipython()
                 shell.user_ns[self._default_measurement_name] = self
                 shell.user_ns[self._default_dataset_name] = self.dataset
+
 
             return self
         except:
@@ -570,7 +577,8 @@ class Measurement:
         # Ensure measuring multi_parameter matches the current action_indices
         self._verify_action(action=multi_parameter, name=name, add_if_new=True)
 
-        results_list = multi_parameter(**kwargs)
+        with self.timings.record(['measurement', self.action_indices, 'get']):
+            results_list = multi_parameter(**kwargs)
 
         results = dict(zip(multi_parameter.names, results_list))
 
@@ -725,7 +733,8 @@ class Measurement:
         while self.is_paused:
             sleep(0.1)
 
-
+        t0 = perf_counter()
+        initial_action_indices = self.action_indices
 
         # TODO Incorporate kwargs name, label, and unit, into each of these
         if isinstance(measurable, Parameter):
@@ -747,6 +756,11 @@ class Measurement:
                 f"Cannot measure {measurable} as it cannot be called, and it "
                 f"is not a dict, int, float, bool, or numpy array."
             )
+
+        self.timings.record(
+            ['measurement', initial_action_indices, 'total'],
+            perf_counter() - t0
+        )
 
         return result
 
