@@ -202,7 +202,6 @@ class Measurement:
                 Measurement.running_measurement = None
             raise
 
-<<<<<<< HEAD
     def __exit__(self, exc_type: Exception, exc_val, exc_tb):
         """Operation when exiting a loop
 
