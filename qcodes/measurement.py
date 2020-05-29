@@ -225,7 +225,7 @@ class Measurement:
 
             self._apply_actions(self.except_actions, label="except", clear=True)
 
-            if Measurement.running_measurement is self:
+            if msmt is self:
                 self._apply_actions(
                     Measurement.except_actions, label="global except", clear=True
                 )
@@ -234,7 +234,7 @@ class Measurement:
 
         self.unmask_all()
 
-        if Measurement.running_measurement is self:
+        if msmt is self:
             # Also perform global final actions
             # These are always performed when outermost measurement finishes
             self._apply_actions(Measurement.final_actions, label="global final")
@@ -250,7 +250,7 @@ class Measurement:
             self.dataset.active = False
 
         else:
-            Measurement.running_measurement.step_out(reduce_dimension=False)
+            msmt.step_out(reduce_dimension=False)
 
         self.is_context_manager = False
 
