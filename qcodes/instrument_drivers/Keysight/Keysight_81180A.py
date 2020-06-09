@@ -425,6 +425,16 @@ class AWGChannel(InstrumentChannel):
             "event signal to initiate or continue a sequence.",
         )
 
+        self.add_parameter(
+            "max_amplitude",
+            get_cmd=None,
+            set_cmd=None,
+            vals=vals.Numbers(min_value=0, max_value=2),
+            initial_value=2,
+            docstring="Maximum voltage for waveforms. Will be verified whenever"
+                      "a waveform is uploaded."
+        )
+
         # Functions
         self.add_function(
             "enable",
@@ -468,6 +478,10 @@ class AWGChannel(InstrumentChannel):
     def upload_waveform(self, waveform, segment_number=None):
         if segment_number is None:
             segment_number = len(self.uploaded_waveforms()) + 1
+
+        V_max = max(abs(waveform))
+        assert V_max <= self.max_amplitude(), \
+            f"Max waveform amplitude exceeded: {V_max} V > {self.max_amplitude()} V"
 
         assert len(waveform) >= 320, "Waveform must have at least 320 points"
         assert not len(waveform) % 32, "Waveform points must be divisible by 32"
