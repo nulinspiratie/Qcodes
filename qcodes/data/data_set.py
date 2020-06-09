@@ -689,7 +689,7 @@ class DataSet(DelegateAttributes):
             action_indices: All array action indices must start with the provided
                 indices.
         """
-        arrays = list(self.arrays.values())
+        arrays = sorted(self.arrays.values(), key=lambda arr:arr.action_indices)
 
         if name is not None:
             if full_match:
