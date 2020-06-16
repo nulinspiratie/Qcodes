@@ -17,7 +17,7 @@ from qcodes.utils.helpers import (
     get_last_input_cells,
     PerformanceTimer
 )
-
+from qcodes import config as qcodes_config
 
 RAW_VALUE_TYPES = (float, int, bool, np.ndarray, np.integer, np.floating, np.bool_, type(None))
 
@@ -145,6 +145,7 @@ class Measurement:
                 self._initialize_metadata(self.dataset)
                 with self.timings.record('save_metadata'):
                     self.dataset.save_metadata()
+                    self.dataset.save_config()
 
                 # Initialize attributes
                 self.loop_shape = ()
@@ -256,6 +257,9 @@ class Measurement:
     def _initialize_metadata(self, dataset: DataSet = None):
         if dataset is None:
             dataset = self.dataset
+
+        config = qcodes_config.get('user', {}).get('silq_config', qcodes_config)
+        dataset.add_metadata({"config": config})
 
         dataset.add_metadata({"measurement_type": "Measurement"})
 
