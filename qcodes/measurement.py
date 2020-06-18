@@ -4,6 +4,7 @@ import threading
 from time import sleep, perf_counter
 import traceback
 import logging
+from datetime import datetime
 
 from qcodes.station import Station
 from qcodes.data.data_set import new_data, DataSet
@@ -246,6 +247,8 @@ class Measurement:
                 except:
                     self.log("Could not notify", level="error")
 
+            t_stop = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            self.dataset.add_metadata({"t_stop": t_stop})
             self.dataset.finalize()
             self.dataset.active = False
 
@@ -282,6 +285,7 @@ class Measurement:
                     "measurement_cell": measurement_cell,
                     "measurement_code": measurement_code,
                     "last_input_cells": get_last_input_cells(20),
+                    "t_start": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 }
             )
 
