@@ -739,7 +739,7 @@ class Measurement:
             # Since this Measurement is not the running measurement, it is a
             # DataGroup in the running measurement. Delegate measurement to the
             # running measurement
-            return Measurement.running_measurement.measure(measurable, name=name)
+            return Measurement.running_measurement.measure(measurable, name=name, **kwargs)
 
         # Code from hereon is only reached by the primary measurement,
         # i.e. the running_measurement
