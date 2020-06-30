@@ -351,7 +351,7 @@ class MatPlot(BasePlot):
         if 'label' not in kwargs and isinstance(y, DataArray):
             kwargs['label'] = y.label
 
-        for lineplot_kwarg in ['clim']:
+        for lineplot_kwarg in ['clim', 'cmap']:
             kwargs.pop(lineplot_kwarg, None)
 
         # NOTE(alexj)stripping out subplot because which subplot we're in is
