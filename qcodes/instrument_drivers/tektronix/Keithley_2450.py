@@ -162,28 +162,28 @@ class Keithley_2450(VisaInstrument):
                            label='Source level',
                            docstring='This sets/reads the output voltage or current level of the source.')
 
-        self.add_parameter('output_state',
+        self.add_parameter('output_on',
                            set_cmd=':OUTP:STAT {:d}',
                            get_cmd=':OUTP:STAT?',
-                           set_parser=int,
-                           get_parser=int,
-                           label='Output state',
-                           docstring='Determines whether output is ON or OFF.')
+                           val_mapping={False: 0, True: 1},
+                           label='Output on',
+                           docstring='Determines whether output is on (True) '
+                                     'or off (False)')
 
         self.add_parameter('source_limit',
                            vals=Numbers(),
                            get_cmd=self._get_source_limit,
                            set_cmd=self._set_source_limit,
-                           get_parser=float,
-                           set_parser=float,
+                           val_mapping={False: 0, True: 1},
                            label='Source limit',
                            docstring='The current (voltage) limit when sourcing voltage (current).')
 
         self.add_parameter('source_limit_tripped',
                            get_cmd=self._get_source_limit_tripped,
-                           get_parser=int,
-                           label='The trip state of the source limit.',
-                           docstring='This reads if the source limit has been tripped during a measurement.')
+                           val_mapping={False: 0, True: 1},
+                           label='Source limit reached boolean',
+                           docstring='Returns True if the source limit has '
+                                     'been reached and False otherwise.')
 
         self.add_parameter('source_range',
                            vals=Numbers(),
@@ -195,19 +195,17 @@ class Keithley_2450(VisaInstrument):
         self.add_parameter('source_range_auto',
                            get_cmd=self._get_source_range_auto,
                            set_cmd=self._set_source_range_auto,
-                           set_parser=int,
-                           get_parser=int,
+                           val_mapping={False: 0, True: 1},
                            label='Source range auto mode',
-                           docstring='Determines if the range for sourcing is selected manually (OFF), \
-                                     or automatically (ON).')
+                           docstring='Determines if the range for sourcing is selected automatically (True) or manually (False)')
 
         self.add_parameter('source_read_back',
                            get_cmd=self._get_source_read_back,
                            set_cmd=self._set_source_read_back,
-                           set_parser=int,
-                           get_parser=int,
+                           val_mapping={False: 0, True: 1},
                            label='Source read-back',
-                           docstring='This determines whether the recorded output is the measured source value \
+                           docstring='Determines whether the recorded output '
+                                     'is the measured source value \
                            or the configured source value. The former increases the precision, \
                            but slows down the measurements.')
 
@@ -217,6 +215,7 @@ class Keithley_2450(VisaInstrument):
                                           Enum('MIN', 'DEF', 'MAX')),
                            get_cmd=self._get_source_delay,
                            set_cmd=self._set_source_delay,
+                           unit='s',
                            label='Source measurement delay',
                            docstring='This determines the delay between the source changing and a measurement \
                            being recorded.')
@@ -224,8 +223,7 @@ class Keithley_2450(VisaInstrument):
         self.add_parameter('source_delay_auto',
                            get_cmd=self._get_source_delay_auto_state,
                            set_cmd=self._set_source_delay_auto_state,
-                           set_parser=int,
-                           get_parser=int,
+                           val_mapping={False: 0, True: 1},
                            label='Source measurement delay auto state',
                            docstring='This determines the autodelay between the source changing and a measurement \
                            being recorded set to state ON/OFF.')
