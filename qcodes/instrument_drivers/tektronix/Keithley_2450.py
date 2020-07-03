@@ -259,8 +259,12 @@ class Keithley_2450(VisaInstrument):
         # Set the appropriate unit for the source parameter
         if 'VOLT' in mode:
             self.source_level.unit = 'V'
+            self.source_range.unit = 'V'
+            self.source_limit.unit = 'A'
         else:
             self.source_level.unit = 'A'
+            self.source_range.unit = 'A'
+            self.source_limit.unit = 'V'
         return self.write(':SOUR:FUNC {:s}'.format(mode))
 
     def _get_source_level(self):
