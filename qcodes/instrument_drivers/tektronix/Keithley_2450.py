@@ -246,6 +246,35 @@ class Keithley_2450(VisaInstrument):
                            docstring='If the voltage source does not exceed the set protection limits, the return is 0. \
                            If the voltage source exceeds the set limits, the return is 1.')
 
+        self.add_parameter('voltage',
+                           get_cmd=self.get_voltage,
+                           unit='V',
+                           label='Sensed voltage',
+                           docstring='A parameter to return a sensed voltage '
+                                 'Equivalent to sense_value if the '
+                                 'sense_mode is set to "VOLT"'
+                           )
+
+        self.add_parameter('current',
+                           get_cmd=self.get_current,
+                           unit='A',
+                           label='Sensed current',
+                           docstring='A parameter to return a sensed current. '
+                                     'Equivalent to sense_value if the '
+                                 'sense_mode is set to "CURR"'
+                           )
+
+        self.add_parameter('resistance',
+                           get_cmd=self.get_resistance,
+                           unit='Ohm',
+                           label='Sensed resistance',
+                           docstring='A parameter to return a sensed '
+                                     'resistance. '
+                                     'Equivalent to sense_value if the '
+                                     'sense_mode is set to "RES"'
+                           )
+
+
 
     ### Functions ###
     def reset(self):
@@ -254,6 +283,48 @@ class Keithley_2450(VisaInstrument):
         and all previously sent `*OPC` and `*OPC?`
         """
         self.write(':*RST')
+
+    def get_voltage(self):
+        """A handy function to return the voltage if in the correct mode
+            :return:
+                The sensed voltage
+
+            :raise:
+                RunTimeError
+        """
+        if self.sense_mode() == 'VOLT':
+            return self.sense_value()
+        else:
+            raise RuntimeError(f"{self.name} is not configured to sense a "
+                               f"voltage.")
+    def get_current(self):
+        """A handy function to return the current if in the correct mode
+            :return:
+                The sensed current
+
+            :raise:
+                RunTimeError
+        """
+        if self.sense_mode() == 'CURR':
+            return self.sense_value()
+        else:
+            raise RuntimeError(f"{self.name} is not configured to sense a "
+                               f"current.")
+
+    def get_resistance(self):
+        """A handy function to return the resistance if in the correct mode
+            :return:
+                The sensed resistance
+
+            :raise:
+                RunTimeError
+        """
+        if self.sense_mode() == 'RES':
+            return self.sense_value()
+        else:
+            raise RuntimeError(f"{self.name} is not configured to sense a "
+                               f"resistance.")
+
 
     def _set_source_mode(self, mode):
         # Set the appropriate unit for the source parameter
