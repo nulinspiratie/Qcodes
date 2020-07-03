@@ -174,7 +174,8 @@ class Keithley_2450(VisaInstrument):
                            vals=Numbers(),
                            get_cmd=self._get_source_limit,
                            set_cmd=self._set_source_limit,
-                           val_mapping={False: 0, True: 1},
+                           get_parser=float,
+                           set_parser=float,
                            label='Source limit',
                            docstring='The current (voltage) limit when sourcing voltage (current).')
 
