@@ -1,5 +1,5 @@
 from qcodes import VisaInstrument
-from qcodes.utils.validators import Enum, Ints, MultiType, Numbers
+from qcodes.utils.validators import Bool, Enum, Ints, MultiType, Numbers
 
 
 class Keithley_2450(VisaInstrument):
@@ -19,12 +19,13 @@ class Keithley_2450(VisaInstrument):
         self.add_parameter('sense_mode',
                            vals=Enum('VOLT', 'CURR', 'RES'),
                            get_cmd=':SENS:FUNC?',
+                           get_parser=lambda s: s[:4], # Truncate to 4 chars
                            set_cmd=self._set_sense_mode,
                            label='Sense mode',
-                           docstring='This determines whether a voltage, current or resistance is being sensed.')
+                           docstring='Sets the sensing to a voltage, current '
+                                     'or resistance.')
 
         self.add_parameter('sense_value',
-                           vals=Numbers(),
                            get_cmd=':READ?',
                            get_parser=float,
                            label='Sense value',
@@ -45,7 +46,6 @@ class Keithley_2450(VisaInstrument):
                            get_cmd=self._get_average_count,
                            set_cmd=self._set_average_count,
                            get_parser=int,
-                           set_parser=int,
                            label='Average count',
                            docstring='The number of measurements to average over.')
 
@@ -59,22 +59,26 @@ class Keithley_2450(VisaInstrument):
                            A repeating filter will only output an average once all measurement counts \
                            are collected and is hence slower.')
 
-        self.add_parameter('average_state',
+        self.add_parameter('average_enabled',
+                           vals=Bool(),
                            get_cmd=self._get_average_state,
                            set_cmd=self._set_average_state,
-                           set_parser=int,
-                           get_parser=int,
-                           label='Average state',
-                           docstring='The state of averaging for a measurement, either on or off.')
+                           get_parser=bool,
+                           label='Average enabled',
+                           docstring='If averaging is enabled, each read will '
+                                     'be averaged using either a moving or '
+                                     'repeated average (see average_mode) for a '
+                                     'number of counts (see average_count)')
 
         self.add_parameter('sense_range_auto',
+                           vals=Bool(),
                            get_cmd=self._get_sense_range_auto,
                            set_cmd=self._set_sense_range_auto,
-                           set_parser=int,
-                           get_parser=int,
+                           get_parser=lambda x: bool(int(x)),
                            label='Sense range auto mode',
-                           docstring='This determines if the range for measurements is selected manually \
-                           (OFF), or automatically (ON).')
+                           docstring='This determines if the range for '
+                                     'measurements is selected automatically '
+                                     '(True) or manually (False).')
 
         self.add_parameter('sense_range_auto_lower_limit',
                            vals=Numbers(),
@@ -128,22 +132,21 @@ class Keithley_2450(VisaInstrument):
                            label='Relative offset value for a measurement.',
                            docstring='This specifies an internal offset that can be applied to measured data')
 
-        self.add_parameter('relative_offset_state',
+        self.add_parameter('relative_offset_enabled',
+                           vals=Bool(),
                            get_cmd=self._get_relative_offset_state,
                            set_cmd=self._set_relative_offset_state,
-                           get_parser=int,
-                           set_parser=int,
-                           label='Relative offset state',
+                           label='Relative offset enabled',
                            docstring='This determines if the relative offset is to be applied to measurements.')
 
         self.add_parameter('four_W_mode',
+                           vals=Bool(),
                            get_cmd=self._get_four_wire_mode,
                            set_cmd=self._set_four_wire_mode,
-                           get_parser=int,
-                           set_parser=int,
+                           get_parser = lambda x : bool(int(x)),
                            label='Four-wire sensing state',
-                           docstring='This determines whether you sense in two-wire (OFF) or \
-                           four-wire mode (ON)')
+                           docstring='This determines whether you sense in '
+                                     'four-wire (True) or two-wire (False) mode')
 
         ### Source parameters ###
         self.add_parameter('source_mode',
@@ -163,9 +166,10 @@ class Keithley_2450(VisaInstrument):
                            docstring='This sets/reads the output voltage or current level of the source.')
 
         self.add_parameter('output_on',
+                           vals=Bool(),
                            set_cmd=':OUTP:STAT {:d}',
                            get_cmd=':OUTP:STAT?',
-                           val_mapping={False: 0, True: 1},
+                           get_parser=lambda x: bool(int(x)),
                            label='Output on',
                            docstring='Determines whether output is on (True) '
                                      'or off (False)')
@@ -181,7 +185,7 @@ class Keithley_2450(VisaInstrument):
 
         self.add_parameter('source_limit_tripped',
                            get_cmd=self._get_source_limit_tripped,
-                           val_mapping={False: 0, True: 1},
+                           get_parser = lambda x : bool(int(x)),
                            label='Source limit reached boolean',
                            docstring='Returns True if the source limit has '
                                      'been reached and False otherwise.')
@@ -194,16 +198,18 @@ class Keithley_2450(VisaInstrument):
                            docstring='The voltage (current) output range when sourcing a voltage (current).')
 
         self.add_parameter('source_range_auto',
+                           vals=Bool(),
                            get_cmd=self._get_source_range_auto,
                            set_cmd=self._set_source_range_auto,
-                           val_mapping={False: 0, True: 1},
+                           get_parser=lambda x: bool(int(x)),
                            label='Source range auto mode',
                            docstring='Determines if the range for sourcing is selected automatically (True) or manually (False)')
 
         self.add_parameter('source_read_back',
+                           vals=Bool(),
                            get_cmd=self._get_source_read_back,
                            set_cmd=self._set_source_read_back,
-                           val_mapping={False: 0, True: 1},
+                           get_parser=lambda x: bool(int(x)),
                            label='Source read-back',
                            docstring='Determines whether the recorded output '
                                      'is the measured source value \
@@ -221,13 +227,14 @@ class Keithley_2450(VisaInstrument):
                            docstring='This determines the delay between the source changing and a measurement \
                            being recorded.')
 
+        # TODO: Is this even needed?
         self.add_parameter('source_delay_auto',
                            get_cmd=self._get_source_delay_auto_state,
                            set_cmd=self._set_source_delay_auto_state,
-                           val_mapping={False: 0, True: 1},
                            label='Source measurement delay auto state',
-                           docstring='This determines the autodelay between the source changing and a measurement \
-                           being recorded set to state ON/OFF.')
+                           docstring='This determines the autodelay between '
+                                     'the source changing and a measurement '
+                                     'being recorded set to state ON/OFF.')
 
         self.add_parameter('source_overvoltage_protection',
                            vals=Enum('PROT2', 'PROT5', 'PROT10', 'PROT20', 'PROT40', 'PROT60', 'PROT80', 'PROT100',
@@ -241,27 +248,29 @@ class Keithley_2450(VisaInstrument):
 
         self.add_parameter('source_overvoltage_protection_tripped',
                            get_cmd='SOUR:VOLT:PROT:TRIP?',
-                           get_parser=int,
+                           get_parser=lambda x: bool(int(x)),
                            label='Source overvoltage protection tripped status',
-                           docstring='If the voltage source does not exceed the set protection limits, the return is 0. \
-                           If the voltage source exceeds the set limits, the return is 1.')
+                           docstring='True if the voltage source exceeded '
+                                     'the protection limits, False otherwise.')
 
         self.add_parameter('voltage',
                            get_cmd=self.get_voltage,
+                           set_cmd=self.set_voltage,
                            unit='V',
-                           label='Sensed voltage',
-                           docstring='A parameter to return a sensed voltage '
-                                 'Equivalent to sense_value if the '
-                                 'sense_mode is set to "VOLT"'
+                           label='Voltage',
+                           docstring='A parameter to get and set a voltage. '
+                                 'Equivalent to sense_value (source_level) if the '
+                                 'sense_mode (source_mode) is set to "VOLT"'
                            )
 
         self.add_parameter('current',
                            get_cmd=self.get_current,
+                           set_cmd=self.set_current,
                            unit='A',
-                           label='Sensed current',
-                           docstring='A parameter to return a sensed current. '
-                                     'Equivalent to sense_value if the '
-                                 'sense_mode is set to "CURR"'
+                           label='Current',
+                           docstring='A parameter to get and set a current. '
+                                 'Equivalent to sense_value (source_level) if the '
+                                 'sense_mode (source_mode) is set to "CURR"'
                            )
 
         self.add_parameter('resistance',
@@ -274,8 +283,6 @@ class Keithley_2450(VisaInstrument):
                                      'sense_mode is set to "RES"'
                            )
 
-
-
     ### Functions ###
     def reset(self):
         """
@@ -283,6 +290,12 @@ class Keithley_2450(VisaInstrument):
         and all previously sent `*OPC` and `*OPC?`
         """
         self.write(':*RST')
+
+    def log_message_count(self, eventType="ALL"):
+        return self.ask(f":SYSTem:EVENtlog:COUNt? {eventType}")
+
+    def next_log_message(self, eventType="ALL"):
+        return self.ask(f":SYSTem:EVENtlog:NEXT? {eventType}")
 
     def get_voltage(self):
         """A handy function to return the voltage if in the correct mode
@@ -297,6 +310,7 @@ class Keithley_2450(VisaInstrument):
         else:
             raise RuntimeError(f"{self.name} is not configured to sense a "
                                f"voltage.")
+
     def get_current(self):
         """A handy function to return the current if in the correct mode
             :return:
@@ -325,6 +339,27 @@ class Keithley_2450(VisaInstrument):
             raise RuntimeError(f"{self.name} is not configured to sense a "
                                f"resistance.")
 
+    def set_voltage(self, value):
+        """A handy function to set the voltage if in the correct mode
+            :raise:
+                RunTimeError
+        """
+        if self.source_mode() == 'VOLT':
+            return self.source_level(value)
+        else:
+            raise RuntimeError(f"{self.name} is not configured to source a "
+                               f"voltage.")
+
+    def set_current(self, value):
+        """A handy function to set the current if in the correct mode
+            :raise:
+                RunTimeError
+        """
+        if self.source_mode() == 'CURR':
+            return self.source_level(value)
+        else:
+            raise RuntimeError(f"{self.name} is not configured to source a "
+                               f"current.")
 
     def _set_source_mode(self, mode):
         # Set the appropriate unit for the source parameter
@@ -336,445 +371,173 @@ class Keithley_2450(VisaInstrument):
             self.source_level.unit = 'A'
             self.source_range.unit = 'A'
             self.source_limit.unit = 'V'
-        return self.write(':SOUR:FUNC {:s}'.format(mode))
+        self.write(f':SOUR:FUNC {mode}')
 
     def _get_source_level(self):
         mode = self.source_mode()
-        if 'VOLT' in mode:
-            return self.ask(':SOUR:VOLT?')
-        elif 'CURR' in mode:
-            return self.ask(':SOUR:CURR?')
-        else:
-            raise UserWarning('Unknown source mode')
+        return self.ask(f':SOUR:{mode}?')
 
     def _set_source_level(self, value):
         mode = self.source_mode()
-        if 'VOLT' in mode:
-            if value>=-210.0 and value<=210.0:
-                return self.write(':SOUR:VOLT {:f}'.format(value))
-            else:
-                raise ValueError('Out of range limits!')
-        elif 'CURR' in mode:
-            if value >= -1.05 and value <= 1.05:
-                return self.write(':SOUR:CURR {:f}'.format(value))
-            else:
-                raise ValueError('Out of range limits!')
-        else:
-            raise UserWarning('Unknown source mode')
+        self.write(f':SOUR:{mode} {value:f}')
 
     def _get_source_limit(self):
         mode = self.source_mode()
-        if 'VOLT' in mode:
-            return self.ask(':SOUR:VOLT:ILIM?')+' A'
-        elif 'CURR' in mode:
-            return self.ask(':SOUR:CURR:VLIM?')+' V'
-        else:
-            raise UserWarning('Unknown source mode')
+        IV = 'I' if mode == 'VOLT' else 'V'
+        return self.ask(f':SOUR:VOLT:{IV}LIM?')
 
     def _set_source_limit(self, value):
         mode = self.source_mode()
-        if 'VOLT' in mode:
-            if value>=-1.05 and value<=1.05:
-                return self.write(':SOUR:VOLT:ILIM {:f}'.format(value))
-            else:
-                raise ValueError('Out of range limits!')
-        elif 'CURR' in mode:
-            if value>=-210.0 and value<=210.0:
-                return self.write(':SOUR:CURR:VLIM {:f}'.format(value))
-            else:
-                raise ValueError('Out of range limits!')
-        else:
-            raise UserWarning('Unknown source mode')
+        IV = 'I' if mode == 'VOLT' else 'V'
+        self.write(f':SOUR:VOLT:{IV}LIM {value}')
 
     def _get_source_limit_tripped(self):
         mode = self.source_mode()
-        if 'VOLT' in mode:
-            return self.ask(':SOUR:VOLT:ILIM:TRIP?')
-        elif 'CURR' in mode:
-            return self.ask(':SOUR:CURR:VLIM:TRIP?')
-        else:
-            raise UserWarning('Unknown source mode')
+        IV = 'I' if mode == 'VOLT' else 'V'
+        return self.ask(f':SOUR:VOLT:{IV}LIM:TRIP?')
 
     def _get_source_range(self):
         mode = self.source_mode()
-        if 'VOLT' in mode:
-            return self.ask(':SOUR:VOLT:RANG?')+' V'
-        elif 'CURR' in mode:
-            return self.ask(':SOUR:CURR:RANG?')+' A'
-        else:
-            raise UserWarning('Unknown source mode')
+        return self.ask(f':SOUR:{mode}:RANG?')
 
     def _set_source_range(self, value):
         mode = self.source_mode()
-        if 'VOLT' in mode:
-            if value>=-200.0 and value<=200.0:
-                return self.write(':SOUR:VOLT:RANG {:f}'.format(value))
-            else:
-                raise ValueError('Out of range limits!')
-        elif 'CURR' in mode:
-            if value>=-1.0 and value<=1.0:
-                return self.write(':SOUR:CURR:RANG {:f}'.format(value))
-            else:
-                raise ValueError('Out of range limits!')
-        else:
-            raise UserWarning('Unknown source mode')
+        self.write(f':SOUR:{mode}:RANG {value:f}')
 
     def _get_source_range_auto(self) -> object:
         mode = self.source_mode()
-        if 'VOLT' in mode:
-            return self.ask(':SOUR:VOLT:RANG:AUTO?')
-        elif 'CURR' in mode:
-            return self.ask(':SOUR:CURR:RANG:AUTO?')
-        else:
-            raise UserWarning('Unknown source mode')
+        return self.ask(f':SOUR:{mode}:RANG:AUTO?')
 
     def _set_source_range_auto(self, value):
         mode = self.source_mode()
-        if 'VOLT' in mode:
-            return self.write(':SOUR:VOLT:RANG:AUTO {:d}'.format(value))
-        elif 'CURR' in mode:
-            return self.write(':SOUR:CURR:RANG:AUTO {:d}'.format(value))
-        else:
-            raise UserWarning('Unknown source mode')
+        self.write(f':SOUR:{mode}:RANG:AUTO {value:d}')
 
     def _get_source_read_back(self):
         mode = self.source_mode()
-        if 'VOLT' in mode:
-            return self.ask(':SOUR:VOLT:READ:BACK?')
-        elif 'CURR' in mode:
-            return self.ask(':SOUR:CURR:READ:BACK?')
-        else:
-            raise UserWarning('Unknown source mode')
+        return self.ask(f':SOUR:{mode}:READ:BACK?')
 
     def _set_source_read_back(self, value):
         mode = self.source_mode()
-        if 'VOLT' in mode:
-            return self.write(':SOUR:VOLT:READ:BACK {:d}'.format(value))
-        elif 'CURR' in mode:
-            return self.write(':SOUR:CURR:READ:BACK {:d}'.format(value))
-        else:
-            raise UserWarning('Unknown source mode')
+        self.write(f':SOUR:{mode}:READ:BACK {value:d}')
 
     def _get_source_delay(self):
         mode = self.source_mode()
-        if 'VOLT' in mode:
-            return self.ask(':SOUR:VOLT:DEL?')
-        elif 'CURR' in mode:
-            return self.ask(':SOUR:CURR:DEL?')
-        else:
-            raise UserWarning('Unknown source mode')
+        return self.ask(f':SOUR:{mode}:DEL?')
 
     def _set_source_delay(self, value):
         mode = self.source_mode()
-        if 'VOLT' in mode:
-            return self.write(':SOUR:VOLT:DEL {}'.format(value))
-        elif 'CURR' in mode:
-            return self.write(':SOUR:CURR:DEL {}'.format(value))
-        else:
-            raise UserWarning('Unknown source mode')
+        self.write(f':SOUR:{mode}:DEL {value}')
 
     def _get_source_delay_auto_state(self):
         mode = self.source_mode()
-        if 'VOLT' in mode:
-            return self.ask(':SOUR:VOLT:DEL:AUTO?')
-        elif 'CURR' in mode:
-            return self.ask(':SOUR:CURR:DEL:AUTO?')
-        else:
-            raise UserWarning('Unknown source mode')
+        return self.ask(f':SOUR:{mode}:DEL:AUTO?')
 
     def _set_source_delay_auto_state(self, value):
         mode = self.source_mode()
-        if 'VOLT' in mode:
-            return self.write(':SOUR:VOLT:DEL:AUTO {:d}'.format(value))
-        elif 'CURR' in mode:
-            return self.write(':SOUR:CURR:DEL:AUTO {:d}'.format(value))
-        else:
-            raise UserWarning('Unknown source mode')
+        self.write(f':SOUR:{mode}:DEL:AUTO {value:d}')
 
     def _set_sense_mode(self, mode):
         if 'VOLT' in mode:
             self.sense_value.unit = 'V'
+            self.sense_range_manual.unit = 'V'
         elif 'CURR' in mode:
             self.sense_value.unit = 'A'
+            self.sense_range_manual.unit = 'A'
         elif 'RES' in mode:
             self.sense_value.unit = 'Ohm' # unicode upper-case omega is \u03A9
+            self.sense_range_manual.unit = 'Ohm'
         else:
             raise UserWarning('Unknown sense mode')
-        self.write(set_cmd = ':SENS:FUNC "{:s}"'.format(mode))
+        self.write(f':SENS:FUNC "{mode:s}"')
 
     def _get_average_count(self):
         mode = self.sense_mode()
-        if 'VOLT' in mode:
-            return self.ask(':SENS:VOLT:AVER:COUNT?')
-        elif 'CURR' in mode:
-            return self.ask(':SENS:CURR:AVER:COUNT?')
-        elif 'RES' in mode:
-            return self.ask(':SENS:RES:AVER:COUNT?')
-        else:
-            raise UserWarning('Unknown sense mode')
+        return self.ask(f':SENS:{mode}:AVER:COUNT?')
 
     def _set_average_count(self, value):
         mode = self.sense_mode()
-        if 'VOLT' in mode:
-            return self.write(':SENS:VOLT:AVER:COUNT {}'.format(value))
-        elif 'CURR' in mode:
-            return self.write(':SENS:CURR:AVER:COUNT {}'.format(value))
-        elif 'RES' in mode:
-            return self.write(':SENS:RES:AVER:COUNT {}'.format(value))
-        else:
-            raise UserWarning('Unknown sense mode')
+        self.write(f':SENS:{mode}:AVER:COUNT {value}')
 
     def _get_average_mode(self):
         mode = self.sense_mode()
-        if 'VOLT' in mode:
-            return self.ask(':SENS:VOLT:AVER:TCON?')
-        elif 'CURR' in mode:
-            return self.ask(':SENS:CURR:AVER:TCON?')
-        elif 'RES' in mode:
-            return self.ask(':SENS:RES:AVER:TCON?')
-        else:
-            raise UserWarning('Unknown sense mode')
+        return self.ask(f':SENS:{mode}:AVER:TCON?')
 
     def _set_average_mode(self, filter_type):
         mode = self.sense_mode()
-        if 'VOLT' in mode:
-            return self.write(':SENS:VOLT:AVER:TCON {:s}'.format(filter_type))
-        elif 'CURR' in mode:
-            return self.write(':SENS:CURR:AVER:TCON {:s}'.format(filter_type))
-        elif 'RES' in mode:
-            return self.write(':SENS:RES:AVER:TCON {:s}'.format(filter_type))
-        else:
-            raise UserWarning('Unknown sense mode')
+        self.write(f':SENS:{mode}:AVER:TCON {filter_type}')
 
     def _get_average_state(self):
         mode = self.sense_mode()
-        if 'VOLT' in mode:
-            return self.ask(':SENS:VOLT:AVER?')
-        elif 'CURR' in mode:
-            return self.ask(':SENS:CURR:AVER?')
-        elif 'RES' in mode:
-            return self.ask(':SENS:RES:AVER?')
-        else:
-            raise UserWarning('Unknown sense mode')
+        return self.ask(f':SENS:{mode}:AVER?')
 
     def _set_average_state(self, value):
         mode = self.sense_mode()
-        if 'VOLT' in mode:
-            return self.write(':SENS:VOLT:AVER {:d}'.format(value))
-        elif 'CURR' in mode:
-            return self.write(':SENS:CURR:AVER {:d}'.format(value))
-        elif 'RES' in mode:
-            return self.write(':SENS:RES:AVER {:d}'.format(value))
-        else:
-            raise UserWarning('Unknown sense mode')
+        self.write(f':SENS:{mode}:AVER {value:d}')
 
     def _get_sense_range_auto(self):
         mode = self.sense_mode()
-        if 'VOLT' in mode:
-            return self.ask(':SENS:VOLT:RANG:AUTO?')
-        elif 'CURR' in mode:
-            return self.ask(':SENS:CURR:RANG:AUTO?')
-        elif 'RES' in mode:
-            return self.ask(':SENS:RES:RANG:AUTO?')
-        else:
-            raise UserWarning('Unknown sense mode')
+        return self.ask(f':SENS:{mode}:RANG:AUTO?')
 
     def _set_sense_range_auto(self, value):
         mode = self.sense_mode()
-        if 'VOLT' in mode:
-            return self.write(':SENS:VOLT:RANG:AUTO {:d}'.format(value))
-        elif 'CURR' in mode:
-            return self.write(':SENS:CURR:RANG:AUTO {:d}'.format(value))
-        elif 'RES' in mode:
-            return self.write(':SENS:RES:RANG:AUTO {:d}'.format(value))
-        else:
-            raise UserWarning('Unknown sense mode')
+        self.write(f':SENS:{mode}:RANG:AUTO {value:d}')
 
     def _get_sense_range_manual(self):
         mode = self.sense_mode()
-        if 'VOLT' in mode:
-            return self.ask(':SENS:VOLT:RANG?')+' V'
-        elif 'CURR' in mode:
-            return self.ask(':SENS:CURR:RANG?')+' A'
-        elif 'RES' in mode:
-            return self.ask(':SENS:RES:RANG?')+' Ohms'
-        else:
-            raise UserWarning('Unknown sense mode')
+        return self.ask(f':SENS:{mode}:RANG?')
 
     def _set_sense_range_manual(self, value):
         mode = self.sense_mode()
-        if 'VOLT' in mode:
-            if value>=0.02 and value<=200.0:
-                return self.write(':SENS:VOLT:RANG {:f}'.format(value))
-            else:
-                raise ValueError('Out of range limits!')
-        elif 'CURR' in mode:
-            if value>=1e-8 and value<=1.0:
-                return self.write(':SENS:CURR:RANG {:f}'.format(value))
-            else:
-                raise ValueError('Out of range limits!')
-        elif 'RES' in mode:
-            if value >= 20 and value <= 2e8:
-                return self.write(':SENS:RES:RANG {:f}'.format(value))
-            else:
-                raise ValueError('Out of range limits!')
-        else:
-            raise UserWarning('Unknown sense mode')
+        self.write(f':SENS:{mode}:RANG {value:f}')
 
     def _get_sense_range_auto_lower_limit(self):
         mode = self.sense_mode()
-        if 'VOLT' in mode:
-            return self.ask(':SENS:VOLT:RANG:AUTO:LLIM?')+' V'
-        elif 'CURR' in mode:
-            return self.ask(':SENS:CURR:RANG:AUTO:LLIM?')+' A'
-        elif 'RES' in mode:
-            return self.ask(':SENS:RES:RANG:AUTO:LLIM?')+' Ohms'
-        else:
-            raise UserWarning('Unknown sense mode')
+        return self.ask(f':SENS:{mode}:RANG:AUTO:LLIM?')
 
     def _set_sense_range_auto_lower_limit(self, value):
         mode = self.sense_mode()
-        if 'VOLT' in mode:
-            if value>=0.02 and value<=200.0:
-                return self.write(':SENS:VOLT:RANG:AUTO:LLIM {:f}'.format(value))
-            else:
-                raise ValueError('Out of range limits!')
-        elif 'CURR' in mode:
-            if value>=1e-8 and value<=1.0:
-                return self.write(':SENS:CURR:RANG:AUTO:LLIM {:f}'.format(value))
-            else:
-                raise ValueError('Out of range limits!')
-        elif 'RES' in mode:
-            if value >= 2 and value <= 2e8:
-                return self.write(':SENS:RES:RANG:AUTO:LLIM {:f}'.format(value))
-            else:
-                raise ValueError('Out of range limits!')
-        else:
-            raise UserWarning('Unknown sense mode')
+        self.write(f':SENS:{mode}:RANG:AUTO:LLIM {value:f}')
 
     def _get_sense_range_auto_upper_limit(self):
         mode = self.sense_mode()
-        if 'VOLT' in mode:
-            return self.ask(':SENS:VOLT:RANG:AUTO:ULIM?')+' V'
-        elif 'CURR' in mode:
-            raise ValueError('Wrong sense mode for auto range upper limit!')
-        elif 'RES' in mode:
-            return self.ask(':SENS:RES:RANG:AUTO:ULIM?')+' Ohms'
-        else:
-            raise UserWarning('Unknown sense mode')
+        return self.ask(f':SENS:{mode}:RANG:AUTO:ULIM?')
 
     def _set_sense_range_auto_upper_limit(self, value):
         mode = self.sense_mode()
-        if 'VOLT' in mode:
-            raise ValueError('Auto range upper limit can be set only for resistance!')
-        elif 'CURR' in mode:
-            raise ValueError('Auto range upper limit can be set only for resistance!')
-        elif 'RES' in mode:
-            lower_limit = self.sense_range_auto_lower_limit()
-            if value >= 20 and value <= 2e8 and lower_limit <= value:
-                return self.write(':SENS:RES:RANG:AUTO:ULIM {:f}'.format(value))
-            else:
-                raise ValueError('Out of range limits!')
-        else:
-            raise UserWarning('Unknown sense mode')
+        # TODO: check if auto range upper limit only works for resistance.
+        self.write(f':SENS:{mode}:RANG:AUTO:ULIM {value:f}')
 
     def _get_nplc(self):
         mode = self.sense_mode()
-        if 'VOLT' in mode:
-            return self.ask(':SENS:VOLT:NPLC?')
-        elif 'CURR' in mode:
-            return self.ask(':SENS:CURR:NPLC?')
-        elif 'RES' in mode:
-            return self.ask(':SENS:RES:NPLC?')
-        else:
-            raise UserWarning('Unknown sense mode')
+        return self.ask(f':SENS:{mode}:NPLC?')
 
     def _set_nplc(self, value):
         mode = self.sense_mode()
-        if 'VOLT' in mode:
-            return self.write(':SENS:VOLT:NPLC {:f}'.format(value))
-        elif 'CURR' in mode:
-            return self.write(':SENS:CURR:NPLC {:f}'.format(value))
-        elif 'RES' in mode:
-            return self.write(':SENS:RES:NPLC {:f}'.format(value))
-        else:
-            raise UserWarning('Unknown sense mode')
+        self.write(f':SENS:{mode}:NPLC {value:f}')
 
     def _get_relative_offset(self):
         mode = self.sense_mode()
-        if 'VOLT' in mode:
-            return self.ask(':SENS:VOLT:REL?')+' V'
-        elif 'CURR' in mode:
-            return self.ask(':SENS:CURR:REL?')+' A'
-        elif 'RES' in mode:
-            return self.ask(':SENS:RES:REL?')+' Ohms'
-        else:
-            raise UserWarning('Unknown sense mode')
+        return self.ask(f':SENS:{mode}:REL?')
 
     def _set_relative_offset(self, value):
         mode = self.sense_mode()
-        if 'VOLT' in mode:
-            if value>=-200.0 and value<=200.0:
-                return self.write(':SENS:VOLT:REL {:f}'.format(value))
-            else:
-                raise ValueError('Out of range limits!')
-        elif 'CURR' in mode:
-            if value>=-1.0 and value<=1.0:
-                return self.write(':SENS:CURR:REL {:f}'.format(value))
-            else:
-                raise ValueError('Out of range limits!')
-        elif 'RES' in mode:
-            if value >= -2e8 and value <= 2e8:
-                return self.write(':SENS:RES:REL {:f}'.format(value))
-            else:
-                raise ValueError('Out of range limits!')
-        else:
-            raise UserWarning('Unknown sense mode')
+        self.write(':SENS:{mode}:REL {value:f}')
 
     def _get_relative_offset_state(self):
         mode = self.sense_mode()
-        if 'VOLT' in mode:
-            return self.ask(':SENS:VOLT:REL:STAT?')
-        elif 'CURR' in mode:
-            return self.ask(':SENS:CURR:REL:STAT?')
-        elif 'RES' in mode:
-            return self.ask(':SENS:RES:REL:STAT?')
-        else:
-            raise UserWarning('Unknown sense mode')
+        return self.ask(f':SENS:{mode}:REL:STAT?')
 
     def _set_relative_offset_state(self, value):
         mode = self.sense_mode()
-        if 'VOLT' in mode:
-            return self.write(':SENS:VOLT:REL:STAT {:d}'.format(value))
-        elif 'CURR' in mode:
-            return self.write(':SENS:CURR:REL:STAT {:d}'.format(value))
-        elif 'RES' in mode:
-            return self.write(':SENS:RES:REL:STAT {:d}'.format(value))
-        else:
-            raise UserWarning('Unknown sense mode')
+        self.write(f':SENS:{mode}:REL:STAT {value:d}')
 
     def _get_four_wire_mode(self):
         mode = self.sense_mode()
-        if 'VOLT' in mode:
-            return self.ask(':SENS:VOLT:RSEN?')
-        elif 'CURR' in mode:
-            return self.ask(':SENS:CURR:RSEN?')
-        elif 'RES' in mode:
-            return self.ask(':SENS:RES:RSEN?')
-        else:
-            raise UserWarning('Unknown sense mode')
+        return self.ask(f':SENS:{mode}:RSEN?')
 
     def _set_four_wire_mode(self, value):
         mode = self.sense_mode()
-        if 'VOLT' in mode:
-            return self.write(':SENS:VOLT:RSEN {:d}'.format(value))
-        elif 'CURR' in mode:
-            return self.write(':SENS:CURR:RSEN {:d}'.format(value))
-        elif 'RES' in mode:
-            return self.write(':SENS:RES:RSEN {:d}'.format(value))
-        else:
-            raise UserWarning('Unknown sense mode')
-
+        self.write(f':SENS:{mode}:RSEN {value:d}')
 
     ### Other deprecated functions ###
     # deprecated
@@ -784,31 +547,3 @@ class Keithley_2450(VisaInstrument):
     # deprecated
     def clear_buffer(self, buffer_name):
         self.write(':TRACe:CLEar {:s}'.format(buffer_name))
-
-    # deprecated
-    # def measFunc(self):
-    #     self.write('OUTput ON')
-    #     self.write('TRACe:TRIGger "MykhBuffer1"')
-    #     return self.ask('TRACe:DATA? 1, 1, "MykhBuffer1", SOUR, READ, SEC')
-
-    # deprecated
-    # def measPosFunc(self):
-    #     self.write('SOURce:CURR 0.02')
-    #     self.write('OUTput ON')
-    #     self.write('TRACe:TRIGger "MykhBuffer1"')
-    #     return self.ask('TRACe:DATA? 1, 1, "MykhBuffer1", SOUR, READ, SEC')
-
-    # deprecated
-    # def measNegFunc(self):
-    #     self.write('SOURce:CURR -0.02')
-    #     self.write('OUTput ON')
-    #     self.write('TRACe:TRIGger "MykhBuffer1"')
-    #     return self.ask('TRACe:DATA? 1, 1, "MykhBuffer1", SOUR, READ, SEC')
-
-    # deprecated
-    # def getTime(self):
-    #     return self.ask('TRACe:DATA? 1, 1, "MykhBuffer1", SOUR, READ, SEC')
-
-    # deprecated
-    # def getCurrent(self):
-    #     return self.ask('TRACe:DATA? 1, 1, "MykhBuffer1", SOUR, READ, SEC')
