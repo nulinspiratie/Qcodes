@@ -1,6 +1,16 @@
 from qcodes import VisaInstrument
 from qcodes.utils.validators import Bool, Enum, Ints, MultiType, Numbers
 
+def str_to_bool(s):
+    if type(s) != str:
+        raise ValueError("Argument must be a string.")
+    if s == '0':
+        return False
+    elif s == '1':
+        return True
+    else:
+        raise ValueError("String data not valid, string must be "
+                         "either '0' or '1'")
 
 class Keithley_2450(VisaInstrument):
     """
@@ -74,7 +84,7 @@ class Keithley_2450(VisaInstrument):
                            vals=Bool(),
                            get_cmd=self._get_sense_range_auto,
                            set_cmd=self._set_sense_range_auto,
-                           get_parser=lambda x: bool(int(x)),
+                           get_parser=str_to_bool,
                            label='Sense range auto mode',
                            docstring='This determines if the range for '
                                      'measurements is selected automatically '
@@ -143,7 +153,7 @@ class Keithley_2450(VisaInstrument):
                            vals=Bool(),
                            get_cmd=self._get_four_wire_mode,
                            set_cmd=self._set_four_wire_mode,
-                           get_parser = lambda x : bool(int(x)),
+                           get_parser=str_to_bool,
                            label='Four-wire sensing state',
                            docstring='This determines whether you sense in '
                                      'four-wire (True) or two-wire (False) mode')
@@ -169,7 +179,7 @@ class Keithley_2450(VisaInstrument):
                            vals=Bool(),
                            set_cmd=':OUTP:STAT {:d}',
                            get_cmd=':OUTP:STAT?',
-                           get_parser=lambda x: bool(int(x)),
+                           get_parser=str_to_bool,
                            label='Output on',
                            docstring='Determines whether output is on (True) '
                                      'or off (False)')
@@ -185,7 +195,7 @@ class Keithley_2450(VisaInstrument):
 
         self.add_parameter('source_limit_tripped',
                            get_cmd=self._get_source_limit_tripped,
-                           get_parser = lambda x : bool(int(x)),
+                           get_parser=str_to_bool,
                            label='Source limit reached boolean',
                            docstring='Returns True if the source limit has '
                                      'been reached and False otherwise.')
@@ -201,7 +211,7 @@ class Keithley_2450(VisaInstrument):
                            vals=Bool(),
                            get_cmd=self._get_source_range_auto,
                            set_cmd=self._set_source_range_auto,
-                           get_parser=lambda x: bool(int(x)),
+                           get_parser=str_to_bool,
                            label='Source range auto mode',
                            docstring='Determines if the range for sourcing is selected automatically (True) or manually (False)')
 
@@ -209,7 +219,7 @@ class Keithley_2450(VisaInstrument):
                            vals=Bool(),
                            get_cmd=self._get_source_read_back,
                            set_cmd=self._set_source_read_back,
-                           get_parser=lambda x: bool(int(x)),
+                           get_parser=str_to_bool,
                            label='Source read-back',
                            docstring='Determines whether the recorded output '
                                      'is the measured source value \
@@ -248,7 +258,7 @@ class Keithley_2450(VisaInstrument):
 
         self.add_parameter('source_overvoltage_protection_tripped',
                            get_cmd='SOUR:VOLT:PROT:TRIP?',
-                           get_parser=lambda x: bool(int(x)),
+                           get_parser=str_to_bool,
                            label='Source overvoltage protection tripped status',
                            docstring='True if the voltage source exceeded '
                                      'the protection limits, False otherwise.')
