@@ -562,7 +562,43 @@ class Keithley_2450(VisaInstrument):
             self.sense_range_manual.unit = 'Ohm'
         self.write(f':SENS:FUNC "{mode}"')
 
-    # Other deprecated functions
+    # Buffer functions
+    def measure_buffer(self, buffer_name, buffer_elements):
+        return self.ask(f':READ? "{buffer_name}", {buffer_elements}')
+
+    def read_buffer(self, buffer_name, end_index, start_index=0,
+                    buffer_elements: list = ['READing']):
+        """Read values stored in a buffer.
+
+            :param buffer_name : The name of the buffer to read from.
+            :param start_index : The first index to get data from.
+            :param end_index : The final index to get data from.
+            :param buffer_elements : list of elements to get from the buffer.
+                    Options:
+                    DATE : the date when the data point was measured
+                    FORMatted : The measured value as it appears on the front panel
+                    FRACtional : The fractional seconds for the data point
+                                 when the data point was measured
+                    READing : (default option) The measurement reading based on
+                              the [:SENSe[1]]:FUNCtion[:ON] setting
+                    RELative : The relative time when the data point was measured
+                    SEConds : The seconds in UTC format when the data point was measured
+                    SOURce : The source value; if readback is ON, then it is the
+                             readback value, otherwise it is the programmed
+                             source value
+                    SOURFORMatted : The source value as it appears on the display
+                    SOURSTATus : The status information associated with sourcing.
+                    SOURUNIT : The unit of value associated with the source value
+                    STATus : The status information associated with the measurement
+                    TIME : The time for the data point
+                    TSTamp : The timestamp for the data point
+                    UNIT : The unit of measure associated with the measurement
+
+            :returns Values from the buffer.
+        """
+
+        return self.ask(f':TRACe:DATA? {start_index}, {end_index}, '
+                        f'"{buffer_name}", {", ".join(buffer_elements)}')
 
     # deprecated
     def make_buffer(self, buffer_name, buffer_size):
