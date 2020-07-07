@@ -42,7 +42,7 @@ def with_error_check(fun):
 def error_check(self, last_method=''):
     """Check if an error occurred while setting/getting a value.
 
-    :param self: SMUParameter instance.
+    :param self: Keithley_2450 instance.
     :param last_method: A string representation of the last called method
     with arguments
 
@@ -50,12 +50,11 @@ def error_check(self, last_method=''):
         RuntimeError if an error occurred during instrument command.
 
     """
-    smu = self.parent
-    if smu.log_message_count(event_type='ERR') > 0:
+    if self.log_message_count(event_type='ERR') > 0:
         raise RuntimeError(last_method + '\n' + self.next_log_message('ERR'))
-    elif smu.log_message_count(event_type='WARN') > 0:
+    elif self.log_message_count(event_type='WARN') > 0:
         logger.warning(last_method + '\n' + self.next_log_message('WARN'))
-    elif smu.log_message_count(event_type='INF') > 0:
+    elif self.log_message_count(event_type='INF') > 0:
         logger.info(last_method + '\n' + self.next_log_message('INF'))
 
 
@@ -84,12 +83,14 @@ class SMUParameter(Parameter):
 
     @with_error_check
     def get_raw(self):
-        if 'mode' in get_cmd:
+        if 'mode' in self.get_cmd:
             if self.source_cmd:
                 mode = self.parent.source_mode()
             else:
                 mode = self.parent.sense_mode()
             get_cmd = self.get_cmd.format(mode=mode)
+        else:
+            get_cmd = self.get_cmd
 
         retVal = self.parent.ask(get_cmd)
 
@@ -104,7 +105,10 @@ class SMUParameter(Parameter):
             value = int(value)
 
         if 'mode' in self.set_cmd:
-            mode = self.parent.source_mode()
+            if self.source_cmd:
+                mode = self.parent.source_mode()
+            else:
+                mode = self.parent.sense_mode()
             set_cmd = self.set_cmd.format(value, mode=mode)
         else:
             set_cmd = self.set_cmd.format(value)
@@ -134,8 +138,8 @@ class Keithley_2450(VisaInstrument):
                                  label='Voltage',
                                  docstring='A parameter to get and set a '
                                            'voltage. '
-                                           'Equivalent to sense_value ('
-                                           'source_level) if the '
+                                           'Equivalent to sense ('
+                                           'source) if the '
                                            'sense_mode (source_mode) is set '
                                            'to "VOLT"'
                                  )
@@ -148,8 +152,8 @@ class Keithley_2450(VisaInstrument):
                                  label='Current',
                                  docstring='A parameter to get and set a '
                                            'current. '
-                                           'Equivalent to sense_value ('
-                                           'source_level) if the '
+                                           'Equivalent to sense ('
+                                           'source) if the '
                                            'sense_mode (source_mode) is set '
                                            'to "CURR"'
                                  )
@@ -161,7 +165,7 @@ class Keithley_2450(VisaInstrument):
                                     label='Sensed resistance',
                                     docstring='A parameter to return a sensed '
                                               'resistance. '
-                                              'Equivalent to sense_value if '
+                                              'Equivalent to sense if '
                                               'the '
                                               'sense_mode is set to "RES"'
                                     )
@@ -332,7 +336,7 @@ class Keithley_2450(VisaInstrument):
                                                'voltage or current is being '
                                                'sourced.')
 
-        self.source_level = SMUParameter('source_level',
+        self.source = SMUParameter('source',
                                          vals=Numbers(),
                                          cmd=':SOUR:{mode}',
                                          label='Source level',
@@ -477,7 +481,7 @@ class Keithley_2450(VisaInstrument):
                 RunTimeError
         """
         if self.sense_mode() == 'VOLT':
-            return self.sense_value()
+            return self.sense()
         else:
             raise RuntimeError(f"{self.name} is not configured to sense a "
                                f"voltage.")
@@ -491,7 +495,7 @@ class Keithley_2450(VisaInstrument):
                 RunTimeError
         """
         if self.sense_mode() == 'CURR':
-            return self.sense_value()
+            return self.sense()
         else:
             raise RuntimeError(f"{self.name} is not configured to sense a "
                                f"current.")
@@ -505,7 +509,7 @@ class Keithley_2450(VisaInstrument):
                 RunTimeError
         """
         if self.sense_mode() == 'RES':
-            return self.sense_value()
+            return self.sense()
         else:
             raise RuntimeError(f"{self.name} is not configured to sense a "
                                f"resistance.")
@@ -516,7 +520,7 @@ class Keithley_2450(VisaInstrument):
                 RunTimeError
         """
         if self.source_mode() == 'VOLT':
-            return self.source_level(value)
+            return self.source(value)
         else:
             raise RuntimeError(f"{self.name} is not configured to source a "
                                f"voltage.")
@@ -527,7 +531,7 @@ class Keithley_2450(VisaInstrument):
                 RunTimeError
         """
         if self.source_mode() == 'CURR':
-            return self.source_level(value)
+            return self.source(value)
         else:
             raise RuntimeError(f"{self.name} is not configured to source a "
                                f"current.")
@@ -536,11 +540,11 @@ class Keithley_2450(VisaInstrument):
     def _set_source_mode(self, mode):
         # Set the appropriate unit for the source parameter
         if mode == 'VOLT':
-            self.source_level.unit = 'V'
+            self.source.unit = 'V'
             self.source_range.unit = 'V'
             self.source_limit.unit = 'A'
         elif mode == 'CURR':
-            self.source_level.unit = 'A'
+            self.source.unit = 'A'
             self.source_range.unit = 'A'
             self.source_limit.unit = 'V'
         self.write(f':SOUR:FUNC {mode}')
@@ -548,13 +552,13 @@ class Keithley_2450(VisaInstrument):
     @with_error_check
     def _set_sense_mode(self, mode):
         if mode == 'VOLT':
-            self.sense_value.unit = 'V'
+            self.sense.unit = 'V'
             self.sense_range_manual.unit = 'V'
         elif mode == 'CURR':
-            self.sense_value.unit = 'A'
+            self.sense.unit = 'A'
             self.sense_range_manual.unit = 'A'
         elif mode == 'RES':
-            self.sense_value.unit = 'Ohm'  # unicode upper-case omega is \u03A9
+            self.sense.unit = 'Ohm'  # unicode upper-case omega is \u03A9
             self.sense_range_manual.unit = 'Ohm'
         self.write(f':SENS:FUNC "{mode}"')
 
