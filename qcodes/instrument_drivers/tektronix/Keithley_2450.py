@@ -544,6 +544,55 @@ class Keithley_2450(VisaInstrument):
             raise RuntimeError(f"{self.name} is not configured to source a "
                                f"current.")
 
+    def setup_leakage(self, source_range:Union[str, float]='AUTO',
+                      current_limit=3e-9, output_on=False):
+        self.source_mode('VOLT')
+        self.sense_mode('CURR')
+        self.output_on(output_on)
+        self.source(0) # Leakage tests always start from 0
+        if source_range == 'AUTO':
+            self.source_range_auto(True)
+        else:
+            self.source_range_manual(source_range)
+        self.source_limit(current_limit)
+        self.sense_range_manual(current_limit)
+
+
+    def setup_voltage_source(self, source_value=0, source_range:Union[str,float]='AUTO',
+                             sense_range:Union[str, float]='AUTO',
+                             output_on=False):
+        self.source_mode('VOLT')
+        self.sense_mode('CURR')
+        self.output_on(output_on)
+        self.source(source_value)
+
+        if source_range == 'AUTO':
+            self.source_range_auto(True)
+        else:
+            self.source_range_manual(source_range)
+        if sense_range == 'AUTO':
+            self.sense_range_auto(True)
+        else:
+            self.sense_range_manual(True)
+
+    def setup_current_source(self, source_value=0, source_range:Union[str,float]='AUTO',
+                             sense_range:Union[str,float]='AUTO',
+                             output_on=False):
+        self.source_mode('CURR')
+        self.sense_mode('VOLT')
+        self.output_on(output_on)
+        self.source(source_value)
+
+        if source_range == 'AUTO':
+            self.source_range_auto(True)
+        else:
+            self.source_range_manual(source_range)
+        if sense_range == 'AUTO':
+            self.sense_range_auto(True)
+        else:
+            self.sense_range_manual(True)
+
+
     @with_error_check
     def _set_source_mode(self, mode):
         # Set the appropriate unit for the source parameter
