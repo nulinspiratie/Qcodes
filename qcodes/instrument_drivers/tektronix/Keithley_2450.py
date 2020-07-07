@@ -24,7 +24,16 @@ def with_error_check(fun):
     @wraps(fun)
     def error_check_wrapper(*args, **kwargs):
         value = fun(*args, **kwargs)
-        error_check(value, f'{fun.__name__} with args {args}, {kwargs}.')
+        if isinstance(args[0], SMUParameter):
+            self = args[0].parent
+        elif isinstance(args[0], Keithley_2450):
+            self = args[0]
+        else:
+            raise RuntimeError('No access to Keithley SMU error logs, '
+                               'SMU instrument not defined.')
+
+        if self.error_checking_enabled:
+            error_check(self, f'{fun.__name__} with args: {args}')
         return value
 
     return error_check_wrapper
@@ -33,7 +42,7 @@ def with_error_check(fun):
 def error_check(self, last_method=''):
     """Check if an error occurred while setting/getting a value.
 
-    :param self: Keithley_2450 instance.
+    :param self: SMUParameter instance.
     :param last_method: A string representation of the last called method
     with arguments
 
@@ -41,12 +50,13 @@ def error_check(self, last_method=''):
         RuntimeError if an error occurred during instrument command.
 
     """
-    if self.log_message_count(eventType='ERR') > 0:
+    smu = self.parent
+    if smu.log_message_count(event_type='ERR') > 0:
         raise RuntimeError(last_method + '\n' + self.next_log_message('ERR'))
-    elif self.log_message_count(eventType='WARN') > 0:
+    elif smu.log_message_count(event_type='WARN') > 0:
         logger.warning(last_method + '\n' + self.next_log_message('WARN'))
-    elif self.log_message_count(eventType='INFO') > 0:
-        logger.info(last_method + '\n' + self.next_log_message('INFO'))
+    elif smu.log_message_count(event_type='INF') > 0:
+        logger.info(last_method + '\n' + self.next_log_message('INF'))
 
 
 class SMUParameter(Parameter):
@@ -62,28 +72,27 @@ class SMUParameter(Parameter):
             if not (get_cmd is None and set_cmd is None):
                 raise ValueError("If cmd is provided, get_cmd and set_cmd "
                                  "should be None.")
-            self.get_cmd = cmd + '?'
-            self.set_cmd = cmd + '{}'
-        else:
-            self.get_cmd = get_cmd
-            self.set_cmd = set_cmd
+            get_cmd = cmd + '?'
+            set_cmd = cmd + ' {}'
+
+        self.source_cmd = 'sour' in get_cmd.lower()
+
+        self.get_cmd = get_cmd
+        self.set_cmd = set_cmd
 
         super().__init__(name=name, parent=parent, **kwargs)
 
     @with_error_check
     def get_raw(self):
-        if 'sour' in self.get_cmd.lower():
-            mode = self.parent.source_mode()
-        elif 'sens' in self.get_cmd.lower():
-            mode = self.parent.sense_mode()
-        else:
-            mode = ''
+        if 'mode' in get_cmd:
+            if self.source_cmd:
+                mode = self.parent.source_mode()
+            else:
+                mode = self.parent.sense_mode()
+            get_cmd = self.get_cmd.format(mode=mode)
 
-        if self.get_cmd is not None:
-            retVal = self.parent.ask(self.get_cmd.format(mode=mode))
-        else:
-            raise RuntimeError(f"get_cmd not defined for SMU parameter "
-                               f"{self.name}")
+        retVal = self.parent.ask(get_cmd)
+
         # Process boolean return values
         if type(self.vals) == Bool:
             retVal = str_to_bool(retVal)
@@ -91,18 +100,16 @@ class SMUParameter(Parameter):
 
     @with_error_check
     def set_raw(self, value):
-        if 'sour' in self.set_cmd.lower():
-            mode = self.parent.source_mode()
-        elif 'sens' in self.set_cmd.lower():
-            mode = self.parent.sense_mode()
-        else:
-            mode = ''
+        if type(value) is bool:
+            value = int(value)
 
-        if self.set_cmd is not None:
-            self.parent.write(self.set_cmd.format(value, mode=mode))
+        if 'mode' in self.set_cmd:
+            mode = self.parent.source_mode()
+            set_cmd = self.set_cmd.format(value, mode=mode)
         else:
-            raise RuntimeError(f"set_cmd not defined for SMU oarameter "
-                               f"{self.name}")
+            set_cmd = self.set_cmd.format(value)
+
+        self.parent.write(set_cmd)
 
 
 class Keithley_2450(VisaInstrument):
@@ -116,8 +123,11 @@ class Keithley_2450(VisaInstrument):
     def __init__(self, name, address, **kwargs):
         super().__init__(name, address, terminator='\n', **kwargs)
 
+        self.error_checking_enabled = True
+
         # Convenient parameters
         self.voltage = Parameter('voltage',
+                                 parent=self,
                                  get_cmd=self.get_voltage,
                                  set_cmd=self.set_voltage,
                                  unit='V',
@@ -131,6 +141,7 @@ class Keithley_2450(VisaInstrument):
                                  )
 
         self.current = Parameter('current',
+                                 parent=self,
                                  get_cmd=self.get_current,
                                  set_cmd=self.set_current,
                                  unit='A',
@@ -144,6 +155,7 @@ class Keithley_2450(VisaInstrument):
                                  )
 
         self.resistance = Parameter('resistance',
+                                    parent=self,
                                     get_cmd=self.get_resistance,
                                     unit='Ohm',
                                     label='Sensed resistance',
@@ -157,23 +169,22 @@ class Keithley_2450(VisaInstrument):
         # Sense parameters
 
         self.sense_mode = Parameter('sense_mode',
+                                    parent=self,
                                     vals=Enum('VOLT', 'CURR', 'RES'),
                                     get_cmd=':SENS:FUNC?',
-                                    get_parser=lambda s: s[:4],
-                                    # Truncate to 4 chars
+                                    get_parser=lambda s: s.strip('"')[:4],
                                     set_cmd=self._set_sense_mode,
                                     label='Sense mode',
                                     docstring='Sets the sensing to a voltage, '
-                                              'current '
-                                              'or resistance.')
+                                              'current or resistance.')
 
-        self.sense_value = SMUParameter('sense_value',
-                                        get_cmd=':READ?',
-                                        get_parser=float,
-                                        set_cmd=False,
-                                        label='Sense value',
-                                        docstring='Reading the sensing value '
-                                                  'of the active sense mode.')
+        self.sense = SMUParameter('sense',
+                                get_cmd=':READ?',
+                                get_parser=float,
+                                set_cmd=False,
+                                label='Sense value',
+                                docstring='Read the sensed value '
+                                          'of the active sense mode.')
 
         self.count = SMUParameter('count',
                                   vals=Numbers(min_value=1, max_value=300000),
@@ -312,6 +323,7 @@ class Keithley_2450(VisaInstrument):
         # Source parameters
 
         self.source_mode = Parameter('source_mode',
+                                     parent=self,
                                      vals=Enum('VOLT', 'CURR'),
                                      get_cmd=':SOUR:FUNC?',
                                      set_cmd=self._set_source_mode,
@@ -451,7 +463,7 @@ class Keithley_2450(VisaInstrument):
             ERRor, WARNing, INFormation, ALL
         :return: The number of messages in the event log.
         """
-        return self.ask(f":SYSTem:EVENtlog:COUNt? {event_type}")
+        return int(self.ask(f":SYSTem:EVENtlog:COUNt? {event_type}"))
 
     def next_log_message(self, event_type="ALL"):
         return self.ask(f":SYSTem:EVENtlog:NEXT? {event_type}")
