@@ -130,7 +130,6 @@ class Keithley_2450(VisaInstrument):
     qcodes driver for the Keithley 2450 SMU.
 
     NOTE: Not full list of parameters, however basic functions are implemented.
-          Needs further testing, but is ready for usage.
     """
 
     def __init__(self, name, address, **kwargs):
@@ -478,7 +477,16 @@ class Keithley_2450(VisaInstrument):
         return int(self.ask(f":SYSTem:EVENtlog:COUNt? {event_type}"))
 
     def next_log_message(self, event_type="ALL"):
-        return self.ask(f":SYSTem:EVENtlog:NEXT? {event_type}")
+        log_message = self.ask(f":SYSTem:EVENtlog:NEXT? {event_type}")
+        # Split into message components
+        error_code, full_message = log_message.split(",")
+        message, event_code, time = full_message.strip('"').split(';')
+
+        if event_code == "0":
+            return  # No error
+
+        event_type = {"1": "ERR", "2": "WARN", "4": "INF"}[event_code]
+        return f"{event_type} {error_code:>3} @ {time} : {message}"
 
     def get_voltage(self):
         """A handy function to return the voltage if in the correct mode
@@ -544,7 +552,7 @@ class Keithley_2450(VisaInstrument):
             raise RuntimeError(f"{self.name} is not configured to source a "
                                f"current.")
 
-    def setup_leakage(self, source_range:Union[str, float]='AUTO',
+    def setup_leakage_test(self, source_range:Union[str, float]='AUTO',
                       current_limit=3e-9, output_on=False):
         self.source_mode('VOLT')
         self.sense_mode('CURR')
