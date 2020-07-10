@@ -375,7 +375,7 @@ class MatPlot(BasePlot):
         if 'label' not in kwargs and isinstance(y, DataArray):
             kwargs['label'] = y.label
 
-        for lineplot_kwarg in ['clim', 'cmap']:
+        for lineplot_kwarg in ['clim', 'cmap', 'norm']:
             kwargs.pop(lineplot_kwarg, None)
 
         # NOTE(alexj)stripping out subplot because which subplot we're in is
@@ -483,9 +483,14 @@ class MatPlot(BasePlot):
         # Scale colors from clim kwarg, or otherwise from min(z) and max(z)
         data_arrays = [data_array.get_array() for data_array in ax.collections]
         if clim is None:
-            # Get color limits as min/max of all existing plotted 2D arrays
-            clim = [np.min([np.nanmin(data_array) for data_array in data_arrays]),
-                    np.max([np.nanmax(data_array) for data_array in data_arrays])]
+            # If norm is provided, get clim from there
+            if 'norm' in kwargs:
+                norm = kwargs.get('norm')
+                clim = [norm.vmin, norm.vmax]
+            else:
+                # Get color limits as min/max of all existing plotted 2D arrays
+                clim = [np.min([np.nanmin(data_array) for data_array in data_arrays]),
+                        np.max([np.nanmax(data_array) for data_array in data_arrays])]
 
         # Update color limits for all plotted 2D arrays
         for mesh in ax.collections:
