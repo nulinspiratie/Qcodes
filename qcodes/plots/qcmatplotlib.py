@@ -331,6 +331,7 @@ class MatPlot(BasePlot):
                         ax.dataLim = bbox
                 ax.autoscale()
 
+        self.rescale_axis()
         # Set internal flag to ensure that the full figure is redrawn.
         # If unset, calling canvas.draw from a separate thread may not draw
         # all components
@@ -554,13 +555,16 @@ class MatPlot(BasePlot):
                     if unit in units_to_scale:
                         scale = 1
                         new_unit = unit
-                        for prefix, threshold, trialscale in zip(prefixes,
-                                                                 thresholds,
-                                                                 scales):
-                            if maxval < threshold:
-                                scale = trialscale
-                                new_unit = prefix + unit
-                                break
+                        # Don't scale the units for a log-plot
+                        if (axis == 'x' and subplot.get_xscale() != 'log') or \
+                           (axis == 'y' and subplot.get_yscale() != 'log'):
+                            for prefix, threshold, trialscale in zip(prefixes,
+                                                                     thresholds,
+                                                                     scales):
+                                if maxval < threshold:
+                                    scale = trialscale
+                                    new_unit = prefix + unit
+                                    break
                         # special case the largest
                         if maxval > thresholds[-1]:
                             scale = scales[-1]
