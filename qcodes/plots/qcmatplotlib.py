@@ -9,6 +9,7 @@ from functools import partial
 import logging
 
 import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize, LogNorm
 from matplotlib import ticker
 import numpy as np
 from matplotlib.transforms import Bbox
@@ -41,6 +42,26 @@ def align_y_axis(ax, ax_target):
     posn_old, posn_target = ax.get_position(), ax_target.get_position()
     ax.set_position([posn_old.x0, posn_target.y0, posn_old.width, posn_target.height])
 
+def set_zscale(self, scale : str):
+    data_arrays = [data_array.get_array() for data_array in self.collections]
+    clim = [
+        np.min([np.nanmin(data_array) for data_array in data_arrays]),
+        np.max([np.nanmax(data_array) for data_array in data_arrays])]
+    if scale == 'log':
+        norm = LogNorm(*clim)
+        for mesh in self.collections:
+            mesh.set_norm(norm)
+    elif scale == 'linear':
+        for mesh in self.collections:
+            mesh.set_norm(Normalize(*clim))
+    else:
+        raise ValueError(f"Scale '{scale}' not valid.")
+
+def get_zscale(self):
+    if isinstance(self.qcodes_colorbar.formatter, ticker.LogFormatter):
+        return "log"
+    else:
+        return "linear"
 
 class MatPlot(BasePlot):
     """
@@ -170,6 +191,8 @@ class MatPlot(BasePlot):
             subplot.add = partial(self.add, subplot=k+1)
             subplot.align_x_axis = partial(align_x_axis, subplot)
             subplot.align_y_axis = partial(align_y_axis, subplot)
+            subplot.set_zscale = partial(set_zscale, subplot)
+            subplot.get_zscale = partial(get_zscale, subplot)
 
         self.title = self.fig.suptitle('')
 
