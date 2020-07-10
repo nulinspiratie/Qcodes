@@ -566,14 +566,19 @@ class Keithley_2450(VisaInstrument):
         self.source_limit(current_limit)
         self.sense_range_manual(current_limit)
 
-
-    def setup_voltage_source(self, source_value=0, source_range:Union[str,float]='AUTO',
-                             sense_range:Union[str, float]='AUTO',
+    def setup_voltage_source(self, source_value=0,
+                             sense_mode: str = 'CURR',
+                             source_range: Union[str, float] = 'AUTO',
+                             sense_range: Union[str, float] = 'AUTO',
+                             current_limit: float = None,
                              output_on=False):
         self.source_mode('VOLT')
-        self.sense_mode('CURR')
+        self.sense_mode(sense_mode)
         self.output_on(output_on)
         self.source(source_value)
+
+        if current_limit is not None:
+            self.source_limit(current_limit)
 
         if source_range == 'AUTO':
             self.source_range_auto(True)
@@ -582,15 +587,21 @@ class Keithley_2450(VisaInstrument):
         if sense_range == 'AUTO':
             self.sense_range_auto(True)
         else:
-            self.sense_range_manual(True)
+            self.sense_range_manual(sense_range)
 
-    def setup_current_source(self, source_value=0, source_range:Union[str,float]='AUTO',
-                             sense_range:Union[str,float]='AUTO',
+    def setup_current_source(self, source_value=0,
+                             sense_mode: str = 'VOLT',
+                             source_range: Union[str, float] = 'AUTO',
+                             sense_range: Union[str, float] = 'AUTO',
+                             voltage_limit: float = None,
                              output_on=False):
         self.source_mode('CURR')
-        self.sense_mode('VOLT')
+        self.sense_mode(sense_mode)
         self.output_on(output_on)
         self.source(source_value)
+
+        if voltage_limit is not None:
+            self.source_limit(voltage_limit)
 
         if source_range == 'AUTO':
             self.source_range_auto(True)
@@ -599,8 +610,7 @@ class Keithley_2450(VisaInstrument):
         if sense_range == 'AUTO':
             self.sense_range_auto(True)
         else:
-            self.sense_range_manual(True)
-
+            self.sense_range_manual(sense_range)
 
     @with_error_check
     def _set_source_mode(self, mode):
