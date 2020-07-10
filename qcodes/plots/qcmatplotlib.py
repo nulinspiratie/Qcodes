@@ -563,6 +563,10 @@ class MatPlot(BasePlot):
                 # TODO: include all traces when calculating maxval etc.
                 trace = traces[0]
             for axis in 'x', 'y', 'z':
+                log_scale = False
+                if getattr(subplot, "get_{}scale".format(axis))() == 'log':
+                    log_scale = True
+
                 if axis in trace['config'] and isinstance(trace['config'][axis], DataArray):
                     unit = trace['config'][axis].unit
                     label = trace['config'][axis].label
@@ -579,8 +583,7 @@ class MatPlot(BasePlot):
                         scale = 1
                         new_unit = unit
                         # Don't scale the units for a log-plot
-                        if (axis == 'x' and subplot.get_xscale() != 'log') or \
-                           (axis == 'y' and subplot.get_yscale() != 'log'):
+                        if not log_scale:
                             for prefix, threshold, trialscale in zip(prefixes,
                                                                      thresholds,
                                                                      scales):
@@ -593,8 +596,11 @@ class MatPlot(BasePlot):
                             scale = scales[-1]
                             new_unit = prefixes[-1] + unit
 
-                        tx = ticker.FuncFormatter(
-                            partial(scale_formatter, scale=scale))
+                        if log_scale:
+                            tx = ticker.LogFormatterMathtext()
+                        else:
+                            tx = ticker.FuncFormatter(
+                                partial(scale_formatter, scale=scale))
                         new_label = "{} ({})".format(label, new_unit)
                         if axis in ('x', 'y'):
                             getattr(subplot,
