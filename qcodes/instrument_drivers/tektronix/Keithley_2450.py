@@ -90,7 +90,8 @@ class SMUParameter(Parameter):
                 mode = self.parent.sense_mode()
 
             if "modeIV" in self.get_cmd:
-                get_cmd = self.get_cmd.format(modeIV='I' if mode == 'VOLT' else 'V')
+                get_cmd = self.get_cmd.format(mode=mode,
+                    modeIV='I' if mode == 'VOLT' else 'V')
             else:
                 get_cmd = self.get_cmd.format(mode=mode)
         else:
@@ -115,8 +116,8 @@ class SMUParameter(Parameter):
                 mode = self.parent.sense_mode()
 
             if "modeIV" in self.set_cmd:
-                set_cmd = self.set_cmd.format(value,
-                    modeIV='I' if mode == 'VOLT' else 'V')
+                set_cmd = self.set_cmd.format(value, mode=mode,
+                            modeIV='I' if mode == 'VOLT' else 'V')
             else:
                 set_cmd = self.set_cmd.format(value, mode=mode)
         else:
@@ -362,7 +363,7 @@ class Keithley_2450(VisaInstrument):
 
         self.source_limit = SMUParameter('source_limit',
                                          vals=Numbers(),
-                                         cmd=':SOUR:VOLT:{modeIV}LIM',
+                                         cmd=':SOUR:{mode}:{modeIV}LIM',
                                          label='Source limit',
                                          docstring='The current (voltage) '
                                                    'limit when sourcing '
@@ -370,7 +371,7 @@ class Keithley_2450(VisaInstrument):
 
         self.source_limit_tripped = SMUParameter(
             'source_limit_tripped',
-            get_cmd=':SOUR:VOLT:{modeIV}LIM:TRIP?',
+            get_cmd=':SOUR:{mode}:{modeIV}LIM:TRIP?',
             get_parser=str_to_bool,
             set_cmd=False,
             label='Source limit reached',
