@@ -4,6 +4,7 @@ using the nbagg backend and matplotlib
 """
 from collections import Mapping, Iterable, Sequence
 import pyperclip
+import warnings
 import os
 from functools import partial
 import logging
@@ -50,6 +51,9 @@ def set_zscale(self, scale : str):
         np.min([np.nanmin(data_array) for data_array in data_arrays]),
         np.max([np.nanmax(data_array) for data_array in data_arrays])]
     if scale == 'log':
+        if min(clim) < 0:
+            warnings.warn("Plotted data has negative values, logarithmic scaling is not recommended.")
+            clim[0] = np.min([np.nanmin(abs(data_array)) for data_array in data_arrays])
         norm = LogNorm(*clim)
         for mesh in self.collections:
             mesh.set_norm(norm)
