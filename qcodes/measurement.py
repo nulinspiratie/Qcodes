@@ -948,16 +948,16 @@ class Measurement:
     # Functions relating to measurement flow
     def pause(self):
         """Pause measurement at start of next parameter sweep/measurement"""
-        self.is_paused = True
+        running_measurement().is_paused = True
 
     def resume(self):
         """Resume measurement after being paused"""
-        self.is_paused = False
+        running_measurement().is_paused = False
 
     def stop(self):
-        self.is_stopped = True
+        running_measurement().is_stopped = True
         # Unpause loop
-        self.resume()
+        running_measurement().resume()
 
     def skip(self, N=1):
         action_indices = list(self.action_indices)
