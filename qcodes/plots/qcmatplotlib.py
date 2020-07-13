@@ -43,6 +43,8 @@ def align_y_axis(ax, ax_target):
     ax.set_position([posn_old.x0, posn_target.y0, posn_old.width, posn_target.height])
 
 def set_zscale(self, scale : str):
+    if not hasattr(self, 'qcodes_colorbar'):
+        raise RuntimeError("Axes object does not have a colorbar.")
     data_arrays = [data_array.get_array() for data_array in self.collections]
     clim = [
         np.min([np.nanmin(data_array) for data_array in data_arrays]),
@@ -58,6 +60,8 @@ def set_zscale(self, scale : str):
         raise ValueError(f"Scale '{scale}' not valid.")
 
 def get_zscale(self):
+    if not hasattr(self, 'qcodes_colorbar'):
+        raise RuntimeError("Axes object does not have a colorbar.")
     if isinstance(self.qcodes_colorbar.formatter, ticker.LogFormatter):
         return "log"
     else:
@@ -569,7 +573,8 @@ class MatPlot(BasePlot):
                 trace = traces[0]
             for axis in 'x', 'y', 'z':
                 log_scale = False
-                if getattr(subplot, "get_{}scale".format(axis))() == 'log':
+                if (axis in ['x', 'y'] or hasattr(subplot, 'qcodes_colorbar')) and \
+                        getattr(subplot, "get_{}scale".format(axis))() == 'log':
                     log_scale = True
 
                 if axis in trace['config'] and isinstance(trace['config'][axis], DataArray):
