@@ -960,16 +960,22 @@ class Measurement:
         running_measurement().resume()
 
     def skip(self, N=1):
-        action_indices = list(self.action_indices)
-        action_indices[-1] += N
-        self.action_indices = tuple(action_indices)
-        return self.action_indices
+        if running_measurement() is not self:
+            return running_measurement().skip(N=N)
+        else:
+            action_indices = list(self.action_indices)
+            action_indices[-1] += N
+            self.action_indices = tuple(action_indices)
+            return self.action_indices
 
     def revert(self, N=1):
-        action_indices = list(self.action_indices)
-        action_indices[-1] -= N
-        self.action_indices = tuple(action_indices)
-        return self.action_indices
+        if running_measurement() is not self:
+            return running_measurement().revert(N=N)
+        else:
+            action_indices = list(self.action_indices)
+            action_indices[-1] -= N
+            self.action_indices = tuple(action_indices)
+            return self.action_indices
 
     def step_out(self, reduce_dimension=True):
         if Measurement.running_measurement is not self:
