@@ -605,10 +605,11 @@ class MatPlot(BasePlot):
                                     scale = trialscale
                                     new_unit = prefix + unit
                                     break
-                        # special case the largest
-                        if maxval > thresholds[-1]:
-                            scale = scales[-1]
-                            new_unit = prefixes[-1] + unit
+
+                            # special case the largest
+                            if maxval > thresholds[-1]:
+                                scale = scales[-1]
+                                new_unit = prefixes[-1] + unit
 
                         if log_scale:
                             tx = ticker.LogFormatterMathtext()
