@@ -594,6 +594,9 @@ class MatPlot(BasePlot):
                     scales = [10**(3*6 - 3*n) for n in range(len(prefixes))]
 
                     if unit in units_to_scale:
+                        if unit == 'Ohm':
+                            unit = 'Ω'
+
                         scale = 1
                         new_unit = unit
                         # Don't scale the units for a log-plot
