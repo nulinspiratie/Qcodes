@@ -588,7 +588,7 @@ class DataArray(DelegateAttributes):
         """
         if len(indices) < len(self.shape):
             indices = indices + index_fill[len(indices):]
-        return np.ravel_multi_index(tuple(zip(indices)), self.shape)[0]
+        return np.ravel_multi_index(tuple(zip(indices)), self.shape, mode='wrap')[0]
 
     def _update_modified_range(self, low, high):
         if self.modified_range:
