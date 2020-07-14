@@ -618,11 +618,8 @@ class MatPlot(BasePlot):
                                 partial(scale_formatter, scale=scale))
                         new_label = "{} ({})".format(label, new_unit)
                         if axis in ('x', 'y'):
-                            getattr(subplot,
-                                    "{}axis".format(axis)).set_major_formatter(
-                                tx)
-                            getattr(subplot, "set_{}label".format(axis))(
-                                new_label)
+                            getattr(subplot, "{}axis".format(axis)).set_major_formatter(tx)
+                            getattr(subplot, "set_{}label".format(axis))(new_label)
                         elif hasattr(subplot, 'qcodes_colorbar'):
                             subplot.qcodes_colorbar.formatter = tx
                             subplot.qcodes_colorbar.set_label(new_label)
