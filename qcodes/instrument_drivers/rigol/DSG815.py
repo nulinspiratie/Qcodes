@@ -21,6 +21,13 @@ class DSG815(VisaInstrument):
                                unit='dBm',
                                label='RF output power')
 
+        self.amplitude = Parameter('amplitude',
+                               vals=Numbers(1e-6, 3.162),
+                               get_cmd=':LEVel?',
+                               set_cmd=':LEVel {}',
+                               unit='V',
+                               label='RF output Vp')
+
         self.frequency = Parameter('frequency',
                                    vals=Numbers(9e3, 3e9),
                                    get_cmd=':FREQ?',
