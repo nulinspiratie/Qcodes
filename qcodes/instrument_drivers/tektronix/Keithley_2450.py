@@ -99,9 +99,13 @@ class SMUParameter(Parameter):
 
         retVal = self.parent.ask(get_cmd)
 
-        # Process boolean return values
+        # Process return values
         if type(self.vals) == Bool:
             retVal = str_to_bool(retVal)
+        elif type(self.vals) == Numbers:
+            retVal = float(retVal)
+        elif type(self.vals) == Ints:
+            retVal = int(retVal)
         return retVal
 
     @with_error_check
