@@ -24,7 +24,7 @@ class DSG815(VisaInstrument):
         self.amplitude = Parameter('amplitude',
                                vals=Numbers(1e-6, 3.162),
                                get_cmd=':LEVel?',
-                               set_cmd=':LEVel {}',
+                               set_cmd=':LEVel {}V',
                                unit='V',
                                label='RF output Vp')
 
