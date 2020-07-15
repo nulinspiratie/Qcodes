@@ -8,6 +8,7 @@ class DSG815(VisaInstrument):
         self.reset()
 
         self.unit = Parameter('unit',
+                              parent=self,
                               vals=Enum('DBM', 'DBMV', 'DBUV', 'V', 'W'),
                               get_cmd=':UNIT:POWer?',
                               set_cmd=':UNIT:POWer {}',
@@ -15,6 +16,7 @@ class DSG815(VisaInstrument):
                               docstring='Unit for the RF output level command to use')
 
         self.power = Parameter('power',
+                               parent=self,
                                vals=Numbers(-110, 20),
                                get_cmd=':LEVel?',
                                set_cmd=':LEVel {}',
@@ -22,6 +24,7 @@ class DSG815(VisaInstrument):
                                label='RF output power')
 
         self.amplitude = Parameter('amplitude',
+                               parent=self,
                                vals=Numbers(1e-6, 3.162),
                                get_cmd=':LEVel?',
                                set_cmd=':LEVel {}V',
@@ -29,6 +32,7 @@ class DSG815(VisaInstrument):
                                label='RF output Vp')
 
         self.frequency = Parameter('frequency',
+                                   parent=self,
                                    vals=Numbers(9e3, 3e9),
                                    get_cmd=':FREQ?',
                                    set_cmd=':FREQ {}',
@@ -36,6 +40,7 @@ class DSG815(VisaInstrument):
                                    label='RF output frequency.')
 
         self.output_on = Parameter('output_on',
+                                   parent=self,
                                    vals=Bool(),
                                    get_cmd=':OUTPut?',
                                    get_parser=bool,
