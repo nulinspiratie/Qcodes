@@ -279,7 +279,7 @@ class MatPlot(BasePlot):
 
             #  find ( more hope to) unit and label from
             # the data array inside the config
-            getter = getattr(ax, "get_{}label".format(axletter))
+            getter = getattr(ax, f"get_{axletter}label")
             if axletter in config and not getter():
                 # now if we did not have any kwarg for label or unit
                 # fallback to the data_array
@@ -294,9 +294,9 @@ class MatPlot(BasePlot):
                 # labels/names as these will in general not be consistent on
                 # at least one axis
                 return
-            axsetter = getattr(ax, "set_{}label".format(axletter))
+            axsetter = getattr(ax, f"set_{axletter}label")
             if unit:
-                axsetter("{} ({})".format(label, unit))
+                axsetter(f"{label} ({unit})")
             else:
                 axsetter(str(label))
 
@@ -312,7 +312,7 @@ class MatPlot(BasePlot):
               for given subplot shape
         """
         if not isinstance(subplots, tuple):
-            raise TypeError('Subplots {} must be a tuple'.format(subplots))
+            raise TypeError(f'Subplots {subplots} must be a tuple')
         return (min(3 + 3 * subplots[1], 12), 1 + 3 * subplots[0])
 
     def update_plot(self):
@@ -549,7 +549,7 @@ class MatPlot(BasePlot):
             ext = [ext]
 
         for ext_instance in ext:
-            self.fig.savefig('{}.{}'.format(filename, ext_instance))
+            self.fig.savefig(f'{filename}.{ext_instance}')
 
     def tight_layout(self):
         """
@@ -566,7 +566,7 @@ class MatPlot(BasePlot):
         to avoid prefixes on combined or non standard units
         """
         def scale_formatter(i, pos, scale):
-            return "{0:.7g}".format(i * scale)
+            return f"{i * scale:.7g}"
 
         for i, subplot in enumerate(self.subplots):
             traces = [trace for trace in self.traces if trace['config'].get('subplot', None) == i+1]
@@ -619,10 +619,10 @@ class MatPlot(BasePlot):
                         else:
                             tx = ticker.FuncFormatter(
                                 partial(scale_formatter, scale=scale))
-                        new_label = "{} ({})".format(label, new_unit)
+                        new_label = f"{label} ({new_unit})"
                         if axis in ('x', 'y'):
-                            getattr(subplot, "{}axis".format(axis)).set_major_formatter(tx)
-                            getattr(subplot, "set_{}label".format(axis))(new_label)
+                            getattr(subplot, f"{axis}axis").set_major_formatter(tx)
+                            getattr(subplot, f"set_{axis}label")(new_label)
                         elif hasattr(subplot, 'qcodes_colorbar'):
                             subplot.qcodes_colorbar.formatter = tx
                             subplot.qcodes_colorbar.set_label(new_label)
@@ -630,6 +630,7 @@ class MatPlot(BasePlot):
 
     # Allow actions to be attached
     available_actions = {}
+
     def connect(self, action_name):
         action = self.available_actions[action_name]()
         action.connect(self)
