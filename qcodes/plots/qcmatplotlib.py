@@ -48,12 +48,14 @@ def set_zscale(self, scale : str):
         raise RuntimeError("Axes object does not have a colorbar.")
     data_arrays = [data_array.get_array() for data_array in self.collections]
     clim = [
-        np.min([np.nanmin(data_array) for data_array in data_arrays]),
-        np.max([np.nanmax(data_array) for data_array in data_arrays])]
+        np.nanmin([np.nanmin(data_array) for data_array in data_arrays]),
+        np.nanmax([np.nanmax(data_array) for data_array in data_arrays])]
     if scale == 'log':
-        if min(clim) < 0:
-            warnings.warn("Plotted data has negative values, logarithmic scaling is not recommended.")
-            clim[0] = np.min([np.nanmin(abs(data_array)) for data_array in data_arrays])
+        if np.nanmin(clim) < 0:
+            warnings.warn("Plotted data contains negative values, logarithmic "
+                          "scaling is not recommended.")
+            clim[0] = np.nanmin(
+                [np.nanmin(abs(data_array)) for data_array in data_arrays])
         norm = LogNorm(*clim)
         for mesh in self.collections:
             mesh.set_norm(norm)
@@ -497,8 +499,8 @@ class MatPlot(BasePlot):
                 clim = [norm.vmin, norm.vmax]
             else:
                 # Get color limits as min/max of all existing plotted 2D arrays
-                clim = [np.min([np.nanmin(data_array) for data_array in data_arrays]),
-                        np.max([np.nanmax(data_array) for data_array in data_arrays])]
+                clim = [np.nanmin([np.nanmin(data_array) for data_array in data_arrays]),
+                        np.nanmax([np.nanmax(data_array) for data_array in data_arrays])]
 
         # Update color limits for all plotted 2D arrays
         for mesh in ax.collections:
