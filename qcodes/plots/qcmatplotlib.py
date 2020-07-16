@@ -578,10 +578,12 @@ class MatPlot(BasePlot):
                 # TODO: include all traces when calculating maxval etc.
                 trace = traces[0]
             for axis in 'x', 'y', 'z':
-                log_scale = False
-                if (axis in ['x', 'y'] or hasattr(subplot, 'qcodes_colorbar')) and \
-                        getattr(subplot, "get_{}scale".format(axis))() == 'log':
-                    log_scale = True
+                try:
+                    axis_scale = getattr(subplot, f"get_{axis}scale")()
+                except AttributeError:
+                    axis_scale = None
+
+                log_scale = axis_scale == 'log'
 
                 if axis in trace['config'] and isinstance(trace['config'][axis], DataArray):
                     unit = trace['config'][axis].unit
