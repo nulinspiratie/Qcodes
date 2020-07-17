@@ -38,15 +38,29 @@ def align_x_axis(ax, ax_target):
     posn_old, posn_target = ax.get_position(), ax_target.get_position()
     ax.set_position([posn_target.x0, posn_old.y0, posn_target.width, posn_old.height])
 
+
 def align_y_axis(ax, ax_target):
     """Make y-axis of `ax` aligned with `ax_target` in figure"""
     posn_old, posn_target = ax.get_position(), ax_target.get_position()
     ax.set_position([posn_old.x0, posn_target.y0, posn_old.width, posn_target.height])
 
-def set_zscale(self, scale : str):
+
+def set_zscale(self, scale: str):
+    """Set the qcodes_colorbar scaling
+
+    Note: This function does not behave the same as set_xscale or set_yscale,
+          for example it is currently not possible to set the base of a log
+          scaled plot.
+
+    :param scale: str Either "linear" or "log"
+    :return: None
+
+    :raises: ValueError
+    """
     if not hasattr(self, 'qcodes_colorbar'):
         raise RuntimeError("Axes object does not have a colorbar.")
-    data_arrays = [data_array.get_array() for data_array in self.collections]
+    data_arrays = [data_array.get_array() for data_array in self.collections
+                   if data_array.get_array() is not None]
     clim = [
         np.nanmin([np.nanmin(data_array) for data_array in data_arrays]),
         np.nanmax([np.nanmax(data_array) for data_array in data_arrays])]
@@ -65,13 +79,19 @@ def set_zscale(self, scale : str):
     else:
         raise ValueError(f"Scale '{scale}' not valid.")
 
+
 def get_zscale(self):
+    """Get the qcodes_colorbar scaling
+
+    :return: str "linear" or "log"
+    """
     if not hasattr(self, 'qcodes_colorbar'):
         raise RuntimeError("Axes object does not have a colorbar.")
     if isinstance(self.qcodes_colorbar.formatter, ticker.LogFormatter):
         return "log"
     else:
         return "linear"
+
 
 class MatPlot(BasePlot):
     """
