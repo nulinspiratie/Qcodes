@@ -126,7 +126,7 @@ class MatPlot(BasePlot):
 
     def __init__(self, *args, figsize=None, interval=1, subplots=None, num=None,
                  colorbar=True, sharex=False, sharey=False, gridspec_kw=None,
-                 actions = [], **kwargs):
+                 actions=[], **kwargs):
         super().__init__(interval)
 
         if subplots is None:
@@ -188,10 +188,11 @@ class MatPlot(BasePlot):
             # Format subplots as tuple (nrows, ncols)
             if isinstance(subplots, int):
                 if subplots == 4:
-                    subplots = (2,2)
+                    subplots = (2, 2)
                 else:
                     # self.max_subplot_columns defines the limit on how many
-                    # subplots can be in one row. Adjust subplot rows and columns
+                    # subplots can be in one row. Adjust subplot rows and
+                    # columns
                     #  accordingly
                     nrows = int(np.ceil(subplots / self.max_subplot_columns))
                     ncols = min(subplots, self.max_subplot_columns)
@@ -218,7 +219,7 @@ class MatPlot(BasePlot):
             # Include `add` method to subplots, making it easier to add data to
             # subplots. Note that subplot kwarg is 1-based, to adhere to
             # Matplotlib standards
-            subplot.add = partial(self.add, subplot=k+1)
+            subplot.add = partial(self.add, subplot=k + 1)
             subplot.align_x_axis = partial(align_x_axis, subplot)
             subplot.align_y_axis = partial(align_y_axis, subplot)
             subplot.set_zscale = partial(set_zscale, subplot)
@@ -287,15 +288,15 @@ class MatPlot(BasePlot):
 
     def _update_labels(self, ax, config):
         for axletter in ("x", "y"):
-            if axletter+'label' in config:
-                label = config[axletter+'label']
+            if axletter + 'label' in config:
+                label = config[axletter + 'label']
             else:
                 label = None
 
             # find if any kwarg from plot.add in the base class
             # matches xunit or yunit, signaling a custom unit
-            if axletter+'unit' in config:
-                unit = config[axletter+'unit']
+            if axletter + 'unit' in config:
+                unit = config[axletter + 'unit']
             else:
                 unit = None
 
@@ -442,12 +443,13 @@ class MatPlot(BasePlot):
         if 'label' not in kwargs and isinstance(z, DataArray):
             kwargs['label'] = z.label
 
-        # NOTE(alexj)stripping out subplot because which subplot we're in is already
+        # NOTE(alexj)stripping out subplot because which subplot we're in is
+        # already
         # described by ax, and it's not a kwarg to matplotlib's ax.plot. But I
         # didn't want to strip it out of kwargs earlier because it should stay
         # part of trace['config'].
         args_masked = [masked_invalid(arg) for arg in [x, y, z]
-                      if arg is not None]
+                       if arg is not None]
 
         if np.any([np.all(getmask(arg)) for arg in args_masked]):
             # if the z array is masked, don't draw at all
@@ -466,7 +468,7 @@ class MatPlot(BasePlot):
                 # If a two-dimensional array is provided, only consider the
                 # first row/column, depending on the axis
                 if arr.ndim > 1:
-                    arr = arr[0] if k == 0 else arr[:,0]
+                    arr = arr[0] if k == 0 else arr[:, 0]
 
                 if np.ma.is_masked(arr[1]):
                     # Only the first element is not nan, in this case pad with
@@ -565,7 +567,7 @@ class MatPlot(BasePlot):
         if os.path.splitext(filename)[1]:
             # Filename already has extension
             filename, ext = os.path.splitext(filename)
-            ext = ext[1:] # Remove initial `.`
+            ext = ext[1:]  # Remove initial `.`
 
         if isinstance(ext, str):
             ext = [ext]
@@ -587,11 +589,13 @@ class MatPlot(BasePlot):
         This scales units defined in BasePlot.standardunits only
         to avoid prefixes on combined or non standard units
         """
+
         def scale_formatter(i, pos, scale):
             return f"{i * scale:.7g}"
 
         for i, subplot in enumerate(self.subplots):
-            traces = [trace for trace in self.traces if trace['config'].get('subplot', None) == i+1]
+            traces = [trace for trace in self.traces if
+                      trace['config'].get('subplot', None) == i + 1]
             if not traces:
                 continue
             else:
@@ -614,8 +618,10 @@ class MatPlot(BasePlot):
                     # allow values up to a <1000. i.e. nV is used up to 1000 nV
                     prefixes = ['a', 'f', 'p', 'n', 'μ', 'm', '', 'k', 'M',
                                 'G', 'T', 'P', 'E']
-                    thresholds = [10**(-3*5 + 3*n) for n in range(len(prefixes))]
-                    scales = [10**(3*6 - 3*n) for n in range(len(prefixes))]
+                    thresholds = [10 ** (-3 * 5 + 3 * n) for n in
+                                  range(len(prefixes))]
+                    scales = [10 ** (3 * 6 - 3 * n) for n in
+                              range(len(prefixes))]
 
                     if unit in units_to_scale:
                         if unit == 'Ohm':
