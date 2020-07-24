@@ -4,6 +4,7 @@ import threading
 from time import sleep, perf_counter
 import traceback
 import logging
+from datetime import datetime
 
 from qcodes.station import Station
 from qcodes.data.data_set import new_data, DataSet
@@ -17,7 +18,7 @@ from qcodes.utils.helpers import (
     get_last_input_cells,
     PerformanceTimer
 )
-
+from qcodes import config as qcodes_config
 
 RAW_VALUE_TYPES = (float, int, bool, np.ndarray, np.integer, np.floating, np.bool_, type(None))
 
@@ -145,6 +146,7 @@ class Measurement:
                 self._initialize_metadata(self.dataset)
                 with self.timings.record('save_metadata'):
                     self.dataset.save_metadata()
+                    self.dataset.save_config()
 
                 # Initialize attributes
                 self.loop_shape = ()
@@ -245,6 +247,8 @@ class Measurement:
                 except:
                     self.log("Could not notify", level="error")
 
+            t_stop = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            self.dataset.add_metadata({"t_stop": t_stop})
             self.dataset.finalize()
             self.dataset.active = False
 
@@ -256,6 +260,9 @@ class Measurement:
     def _initialize_metadata(self, dataset: DataSet = None):
         if dataset is None:
             dataset = self.dataset
+
+        config = qcodes_config.get('user', {}).get('silq_config', qcodes_config)
+        dataset.add_metadata({"config": config})
 
         dataset.add_metadata({"measurement_type": "Measurement"})
 
@@ -278,6 +285,7 @@ class Measurement:
                     "measurement_cell": measurement_cell,
                     "measurement_code": measurement_code,
                     "last_input_cells": get_last_input_cells(20),
+                    "t_start": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 }
             )
 
@@ -731,7 +739,7 @@ class Measurement:
             # Since this Measurement is not the running measurement, it is a
             # DataGroup in the running measurement. Delegate measurement to the
             # running measurement
-            return Measurement.running_measurement.measure(measurable, name=name)
+            return Measurement.running_measurement.measure(measurable, name=name, **kwargs)
 
         # Code from hereon is only reached by the primary measurement,
         # i.e. the running_measurement
@@ -940,28 +948,34 @@ class Measurement:
     # Functions relating to measurement flow
     def pause(self):
         """Pause measurement at start of next parameter sweep/measurement"""
-        self.is_paused = True
+        running_measurement().is_paused = True
 
     def resume(self):
         """Resume measurement after being paused"""
-        self.is_paused = False
+        running_measurement().is_paused = False
 
     def stop(self):
-        self.is_stopped = True
+        running_measurement().is_stopped = True
         # Unpause loop
-        self.resume()
+        running_measurement().resume()
 
     def skip(self, N=1):
-        action_indices = list(self.action_indices)
-        action_indices[-1] += N
-        self.action_indices = tuple(action_indices)
-        return self.action_indices
+        if running_measurement() is not self:
+            return running_measurement().skip(N=N)
+        else:
+            action_indices = list(self.action_indices)
+            action_indices[-1] += N
+            self.action_indices = tuple(action_indices)
+            return self.action_indices
 
     def revert(self, N=1):
-        action_indices = list(self.action_indices)
-        action_indices[-1] -= N
-        self.action_indices = tuple(action_indices)
-        return self.action_indices
+        if running_measurement() is not self:
+            return running_measurement().revert(N=N)
+        else:
+            action_indices = list(self.action_indices)
+            action_indices[-1] -= N
+            self.action_indices = tuple(action_indices)
+            return self.action_indices
 
     def step_out(self, reduce_dimension=True):
         if Measurement.running_measurement is not self:
