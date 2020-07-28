@@ -7,8 +7,11 @@ from qcodes.instrument.base import Instrument
 from qcodes.instrument.channel import InstrumentChannel, ChannelList
 from qcodes import validators as vals
 from .SD_DIG import logclass
-model_channel_idxs = {'M3201A': [0,1,2,3],
-                      'M3300A': [0,1,2,3]}
+model_channel_idxs = {'M3201A': [k+1 for k in range(4)],
+                      'M3300A': [k+1 for k in range(4)],
+                      'M3201A_legacy': [k for k in range(4)],
+                      'M3300A_legacy': [k for k in range(4)],
+                      }
 
 
 class AWGChannel(InstrumentChannel):

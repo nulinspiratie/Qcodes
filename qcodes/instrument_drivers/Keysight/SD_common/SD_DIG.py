@@ -10,6 +10,7 @@ from .SD_Module import SD_Module, keysightSD1, SignadyneParameter, with_error_ch
 
 
 # Functions to log method calls from the SD_AIN class
+from typing import List
 import re, sys, types
 def logmethod(value):
     def method_wrapper(self, *args, **kwargs):
@@ -38,8 +39,8 @@ def logclass(cls):
     return cls
 
 
-model_channels = {'M3300A': 8}
-
+model_channel_idxs = {'M3300A_legacy': [k for k in range(8)],
+                      'M3300A': [k+1 for k in range(8)]}
 
 class DigitizerChannel(InstrumentChannel):
     """Signadyne digitizer channel
@@ -323,13 +324,13 @@ class SD_DIG(SD_Module):
                  model: str,
                  chassis: int,
                  slot: int,
-                 channels: int = None,
+                 channel_idxs: List[int] = None,
                  triggers: int = 8,
                  **kwargs):
         super().__init__(name, model, chassis, slot, triggers, **kwargs)
 
-        if channels is None:
-            channels = model_channels[self.model]
+        if channel_idxs is None:
+            channel_idxs = model_channels[self.model]
 
         # Create instance of keysight SD_AIN class
         # We wrap it in a logclass so that any method call is recorded in
@@ -337,7 +338,7 @@ class SD_DIG(SD_Module):
         self.SD_AIN = logclass(keysightSD1.SD_AIN)()
 
         # store card-specifics
-        self.n_channels = channels
+        self.channel_idxs = channel_idxs
 
         # Open the device, using the specified chassis and slot number
         self.initialize(chassis=chassis, slot=slot)
@@ -383,10 +384,12 @@ class SD_DIG(SD_Module):
         channels = ChannelList(self,
                                     name='channels',
                                     chan_type=DigitizerChannel)
-        for ch in range(self.n_channels):
+
+        for ch in self.channel_idxs:
             channel = DigitizerChannel(self, name=f'ch{ch}', id=ch)
             setattr(self, f'ch{ch}', channel)
             channels.append(channel)
+        self.add_submodule('channels', channels)
 
         self.add_submodule('channels', channels)
 
