@@ -683,7 +683,8 @@ class DataSet(DelegateAttributes):
             self,
             name: bool = None,
             full_match: bool = True,
-            action_indices: tuple = None
+            action_indices: tuple = None,
+            set_arrays: bool = False
     ):
         """Get arrays matching criteria
 
@@ -693,6 +694,7 @@ class DataSet(DelegateAttributes):
                 If False, the array name should contain ``name``
             action_indices: All array action indices must start with the provided
                 indices.
+            set_arrays: Whether to include set arrays
         """
         arrays = sorted(self.arrays.values(), key=lambda arr:arr.action_indices)
 
@@ -709,10 +711,22 @@ class DataSet(DelegateAttributes):
                 if arr.action_indices[:len(action_indices)] == action_indices
             ]
 
+        if not set_arrays:
+            arrays = [arr for arr in arrays if not arr.is_setpoint]
+
         return arrays
 
-    def get_array(self, name=None, action_indices=None) -> DataArray:
-        arrays = self.get_arrays(name=name, action_indices=action_indices)
+    def get_array(
+            self,
+            name=None,
+            action_indices=None,
+            set_arrays: bool = False
+    ) -> DataArray:
+        arrays = self.get_arrays(
+            name=name,
+            action_indices=action_indices,
+            set_arrays=set_arrays
+        )
         if not arrays:
             raise RuntimeError(f"Could not find any array with name {name}")
         elif len(arrays) > 1:
