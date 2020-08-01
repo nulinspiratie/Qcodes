@@ -484,11 +484,11 @@ class DataSet(DelegateAttributes):
         paramname = self.default_parameter_name(paramname=paramname)
         return getattr(self, paramname, None)
 
-    def read(self):
+    def read(self, max_rows=None):
         """Read the whole DataSet from storage, overwriting the local data."""
         if self.location is False:
             return
-        self.formatter.read(self)
+        self.formatter.read(self, max_rows=max_rows)
 
     def read_metadata(self):
         """Read the metadata from storage, overwriting the local data."""

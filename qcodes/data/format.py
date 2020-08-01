@@ -69,7 +69,7 @@ class Formatter:
         """
         raise NotImplementedError
 
-    def read(self, data_set):
+    def read(self, data_set, max_rows: int = None):
         """
         Read the entire ``DataSet``.
 
@@ -103,7 +103,7 @@ class Formatter:
         for fn in data_files:
             with io_manager.open(fn, 'r') as f:
                 try:
-                    self.read_one_file(data_set, f, ids_read)
+                    self.read_one_file(data_set, f, ids_read, max_rows=max_rows)
                 except ValueError:
                     log.warning('error reading file ' + fn)
                     log.warning(format_exc())
@@ -135,7 +135,7 @@ class Formatter:
         """
         raise NotImplementedError
 
-    def read_one_file(self, data_set, f, ids_read):
+    def read_one_file(self, data_set, f, ids_read, max_rows=None):
         """
         Read data from a single file into a ``DataSet``.
 
