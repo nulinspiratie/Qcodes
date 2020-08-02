@@ -98,7 +98,7 @@ class GNUPlotFormat(Formatter):
         # number format (only used for writing; will read any number)
         self.number_format = '{:' + number_format + '}'
 
-    def read_one_file(self, data_set, f, ids_read):
+    def read_one_file(self, data_set, f, ids_read, max_rows: int = None):
         """
         Called by Formatter.read to bring one data file into
         a DataSet. Setpoint data may be duplicated across multiple files,
@@ -175,9 +175,11 @@ class GNUPlotFormat(Formatter):
         indices = [0] * ndim
         first_point = True
         resetting = 0
-        for line in f:
+        for k, line in enumerate(f):
             if self._is_comment(line):
                 continue
+            elif max_rows is not None and k > max_rows:
+                break
 
             # ignore leading or trailing whitespace (including in blank lines)
             line = line.strip()
