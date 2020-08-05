@@ -55,10 +55,10 @@ def set_zscale(self, scale: str):
     :param scale: str Either "linear" or "log"
     :return: None
 
-    :raises: ValueError
+    :raises: AttributeError, ValueError
     """
     if not hasattr(self, 'qcodes_colorbar'):
-        raise RuntimeError("Axes object does not have a colorbar.")
+        raise AttributeError("Axes object does not have a colorbar.")
     data_arrays = [data_array.get_array() for data_array in self.collections
                    if data_array.get_array() is not None]
     clim = [
@@ -84,9 +84,11 @@ def get_zscale(self):
     """Get the qcodes_colorbar scaling
 
     :return: str "linear" or "log"
+
+    :raises: AttributeError
     """
     if not hasattr(self, 'qcodes_colorbar'):
-        raise RuntimeError("Axes object does not have a colorbar.")
+        raise AttributeError("Axes object does not have a colorbar.")
     if isinstance(self.qcodes_colorbar.formatter, ticker.LogFormatter):
         return "log"
     else:
@@ -222,8 +224,6 @@ class MatPlot(BasePlot):
             subplot.add = partial(self.add, subplot=k + 1)
             subplot.align_x_axis = partial(align_x_axis, subplot)
             subplot.align_y_axis = partial(align_y_axis, subplot)
-            subplot.set_zscale = partial(set_zscale, subplot)
-            subplot.get_zscale = partial(get_zscale, subplot)
 
         self.title = self.fig.suptitle('')
 
@@ -262,6 +262,9 @@ class MatPlot(BasePlot):
         ax = self[kwargs.get('subplot', 1) - 1]
         if 'z' in kwargs:
             plot_object = self._draw_pcolormesh(ax, colorbar=colorbar, **kwargs)
+            ax.set_zscale = partial(set_zscale, ax)
+            ax.get_zscale = partial(get_zscale, ax)
+
         else:
             plot_object = self._draw_plot(ax, **kwargs)
 
