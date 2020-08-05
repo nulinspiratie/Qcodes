@@ -1156,7 +1156,10 @@ class Parameter(_BaseParameter):
                     and kwargs.get('update_from_config')
                     and self._latest['value'] is not None
             ):
-                # Initial value is already set from config
+                raise ValueError(
+                    f'Cannot pass initial value {initial_value} to {self} '
+                    f'if it should also update its value from config {config_link}'
+                )
                 pass
             elif hasattr(self, 'set') and self.wrap_set:
                 self.set(initial_value, evaluate=False)
