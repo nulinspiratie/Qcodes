@@ -729,13 +729,24 @@ def running_measurement() -> Measurement:
 
 
 class Sweep:
-    def __init__(self, sequence, name=None, unit=None):
+    def __init__(self, parameter_sequence, start=None, stop=None, step=None,
+                 num=None, name=None, unit=None):
         if running_measurement() is None:
             raise RuntimeError("Cannot create a sweep outside a Measurement")
 
         # Properties for the data array
         self.name = name
         self.unit = unit
+
+        if isinstance(parameter_sequence, Parameter):
+            sequence = parameter_sequence.sweep(start=start, stop=stop, step=step, num=num)
+        elif isinstance(parameter_sequence, SweepValues):
+            if not (start is None and stop is None and step is None and num is None):
+                raise ValueError("If sequence is provided, sweep arguments are ignored.")
+            sequence = parameter_sequence
+        else:
+            raise ValueError("Data type not understood, expected Parameter or SweepValues"
+                             f" but got {type(parameter_sequence)}")
 
         self.sequence = sequence
         self.dimension = len(running_measurement().loop_shape)
