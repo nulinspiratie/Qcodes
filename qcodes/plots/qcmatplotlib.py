@@ -516,7 +516,8 @@ class MatPlot(BasePlot):
         pc = ax.pcolormesh(*args, **kwargs)
 
         # Scale colors from clim kwarg, or otherwise from min(z) and max(z)
-        data_arrays = [data_array.get_array() for data_array in ax.collections]
+        data_arrays = [data_array.get_array() for data_array in ax.collections
+                       if data_array.get_array() is not None]
         if clim is None:
             # If norm is provided, get clim from there
             if 'norm' in kwargs:
