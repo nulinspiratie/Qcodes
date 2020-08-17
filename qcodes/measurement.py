@@ -1,6 +1,7 @@
 import sys
 import numpy as np
 from typing import List, Tuple, Union, Sequence, Dict, Any, Callable
+from collections import Iterable
 import threading
 from time import sleep
 import traceback
@@ -740,7 +741,7 @@ class Sweep:
 
         if isinstance(parameter_sequence, Parameter):
             sequence = parameter_sequence.sweep(start=start, stop=stop, step=step, num=num)
-        elif isinstance(parameter_sequence, SweepValues):
+        elif isinstance(parameter_sequence, Iterable):
             if not (start is None and stop is None and step is None and num is None):
                 raise ValueError("If sequence is provided, sweep arguments are ignored.")
             sequence = parameter_sequence
