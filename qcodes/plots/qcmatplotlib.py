@@ -457,11 +457,13 @@ class MatPlot(BasePlot):
         pc = ax.pcolormesh(*args, **kwargs)
 
         # Scale colors from clim kwarg, or otherwise from min(z) and max(z)
-        data_arrays = [data_array.get_array() for data_array in ax.collections]
+        data_arrays = [data_array.get_array() for data_array in ax.collections
+                       if data_array.get_array() is not None]
         if clim is None:
             # Get color limits as min/max of all existing plotted 2D arrays
-            clim = [np.min([np.nanmin(data_array) for data_array in data_arrays if data_array is not None]),
-                    np.max([np.nanmax(data_array) for data_array in data_arrays if data_array is not None])]
+            # Note that any line plots will show up as None, and so we filter it out
+            clim = [np.min([np.nanmin(data_array) for data_array in data_arrays]),
+                    np.max([np.nanmax(data_array) for data_array in data_arrays])]
 
         # Update color limits for all plotted 2D arrays
         for mesh in ax.collections:
