@@ -8,7 +8,7 @@ from IPython.core.magic import (
     needs_local_scope,
 )
 from IPython import get_ipython
-
+import logging
 
 from qcodes.utils.helpers import define_func_from_string
 from qcodes.utils import threading
@@ -219,6 +219,8 @@ class QCoDeSMagic(Magics):
         threading.new_job(
             function, name=thread_name, active=thread_name == threading.default_job_name
         )
+
+        logging.getLogger('new_job').warning(f"Job {thread_name} finished")
 
 
 def register_magic_class(cls=QCoDeSMagic, magic_commands=True):
