@@ -118,7 +118,7 @@ def log_class(
         methods_as_functions=False,
         log=None,
         log_match=".*",
-        log_not_match="asdfnomatch"
+        log_not_match=None
 ):
     """Class decorator to log every method call of a class.
 
@@ -138,15 +138,24 @@ def log_class(
         log_match: RegEx string representation that each method of the class
             must satisfy to be logged
         log_not_match: Optional RegEx string representation, for which if the
-            method each method of the class
-            must satisfy to be logged
+            method each method of the class must satisfy to be logged.
+            A list of strings can also be passed, in which case the method is
+            included if any of the strings are contained in the method name.
 
+    Returns:
+        Logged class
     """
     if log is None:
         log = DEFAULT_LOG
 
     if not inspect.isclass(cls):
         cls = cls.__class__
+
+    if isinstance(log_not_match, list):
+        # Convert list of items to regex representation
+        # e.g. ['banana', 'berry', 'apple'] -> '(banana)|(berry)|(apple)'
+        log_not_match = [f"({elem})" for elem in log_not_match]
+        log_not_match = '|'.join(log_not_match)
 
     allow = (
         lambda s: re.match(log_match, s)
