@@ -16,7 +16,7 @@ def str_to_bool(s):
     elif s == "1":
         return True
     else:
-        raise ValueError("String data not valid, string must be " "either '0' or '1'")
+        raise ValueError("String data not valid, string must be either '0' or '1'")
 
 
 def with_error_check(fun):
@@ -29,7 +29,7 @@ def with_error_check(fun):
             self = args[0]
         else:
             raise RuntimeError(
-                "No access to Keithley SMU error logs, " "SMU instrument not defined."
+                "No access to Keithley SMU error logs, SMU instrument not defined."
             )
 
         if self.error_checking_enabled:
@@ -72,7 +72,7 @@ class SMUParameter(Parameter):
         if cmd is not None:
             if not (get_cmd is None and set_cmd is None):
                 raise ValueError(
-                    "If cmd is provided, get_cmd and set_cmd " "should be None."
+                    "If cmd is provided, get_cmd and set_cmd should be None."
                 )
             get_cmd = cmd + "?"
             set_cmd = cmd + " {}"
@@ -192,7 +192,7 @@ class Keithley_2450(VisaInstrument):
             get_parser=lambda s: s.strip('"')[:4],
             set_cmd=self._set_sense_mode,
             label="Sense mode",
-            docstring="Sets the sensing to a voltage, " "current or resistance.",
+            docstring="Sets the sensing to a voltage, current or resistance.",
         )
 
         self.sense = SMUParameter(
@@ -201,7 +201,7 @@ class Keithley_2450(VisaInstrument):
             get_parser=float,
             set_cmd=False,
             label="Sense value",
-            docstring="Read the sensed value " "of the active sense mode.",
+            docstring="Read the sensed value of the active sense mode.",
         )
 
         self.count = SMUParameter(
@@ -211,7 +211,7 @@ class Keithley_2450(VisaInstrument):
             get_parser=int,
             set_parser=int,
             label="Count",
-            docstring="The number of measurements to " "perform upon request.",
+            docstring="The number of measurements to perform upon request.",
         )
 
         self.average_count = SMUParameter(
@@ -220,7 +220,7 @@ class Keithley_2450(VisaInstrument):
             cmd=":SENS:{mode}:AVER:COUNT",
             get_parser=int,
             label="Average count",
-            docstring="The number of " "measurements to average " "over.",
+            docstring="The number of measurements to average over.",
         )
 
         self.average_mode = SMUParameter(
@@ -299,7 +299,7 @@ class Keithley_2450(VisaInstrument):
             "relative_offset",
             vals=Numbers(),
             cmd=":SENS:{mode}:REL",
-            label="Relative offset value for " "a measurement.",
+            label="Relative offset value for a measurement.",
             docstring="This specifies an internal offset that can be applied to "
                       "measured data",
         )
@@ -308,7 +308,7 @@ class Keithley_2450(VisaInstrument):
             "relative_offset_enabled",
             vals=Bool(),
             cmd=":SENS:{mode}:REL:STAT",
-            label="Relative offset " "enabled",
+            label="Relative offset enabled",
             docstring="This determines if the relative offset is to be applied "
                       "to measurements.",
         )
@@ -347,7 +347,7 @@ class Keithley_2450(VisaInstrument):
             vals=Bool(),
             cmd=":OUTP:STAT",
             label="Output on",
-            docstring="Determines whether output is " "on (True) " "or off (False)",
+            docstring="Determines whether output is on (True) or off (False)",
         )
 
         self.source_limit = SMUParameter(
