@@ -1115,6 +1115,10 @@ class Sweep:
         sequence: Sequence to iterate over.
             Can be an iterable, or a parameter Sweep.
             If the sequence
+        name: Name of sequence
+        unit: unit of
+        reverse: Sweep over sequence in opposite order.
+            The data is also stored in reverse.
 
     Examples:
         ```
@@ -1126,7 +1130,7 @@ class Sweep:
             for param_val in Sweep(p.
         ```
     """
-    def __init__(self, sequence, name=None, unit=None):
+    def __init__(self, sequence, name=None, unit=None, reverse=False):
         if running_measurement() is None:
             raise RuntimeError("Cannot create a sweep outside a Measurement")
 
@@ -1141,6 +1145,7 @@ class Sweep:
         self.dimension = len(running_measurement().loop_shape)
         self.loop_index = None
         self.iterator = None
+        self.reverse = reverse
 
         msmt = running_measurement()
         if msmt.action_indices in msmt.set_arrays:
@@ -1155,14 +1160,17 @@ class Sweep:
                 "is already running in a different thread."
             )
 
+        if self.reverse:
+            self.loop_index = len(self.sequence) - 1
+            self.iterator = iter(self.sequence[::-1])
+        else:
+            self.loop_index = 0
+            self.iterator = iter(self.sequence)
+
         running_measurement().loop_shape += (len(self.sequence),)
-        running_measurement().loop_indices += (0,)
+        running_measurement().loop_indices += (self.loop_index,)
         running_measurement().action_indices += (0,)
 
-        # Create a set array if necessary
-
-        self.loop_index = 0
-        self.iterator = iter(self.sequence)
 
         return self
 
@@ -1200,7 +1208,7 @@ class Sweep:
 
         self.set_array[msmt.loop_indices] = sweep_value
 
-        self.loop_index += 1
+        self.loop_index += 1 if not self.reverse else -1
 
         return sweep_value
 
