@@ -1115,8 +1115,8 @@ class Sweep:
         sequence: Sequence to iterate over.
             Can be an iterable, or a parameter Sweep.
             If the sequence
-        name: Name of sequence
-        unit: unit of
+        name: Name of sweep. Not needed if a Parameter is passed
+        unit: unit of sweep. Not needed if a Parameter is passed
         reverse: Sweep over sequence in opposite order.
             The data is also stored in reverse.
 
