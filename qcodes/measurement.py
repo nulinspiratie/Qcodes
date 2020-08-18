@@ -146,7 +146,9 @@ class Measurement:
                 self._initialize_metadata(self.dataset)
                 with self.timings.record('save_metadata'):
                     self.dataset.save_metadata()
-                    self.dataset.save_config()
+
+                    if hasattr(self.dataset, 'save_config'):
+                        self.dataset.save_config()
 
                 # Initialize attributes
                 self.loop_shape = ()
@@ -990,6 +992,15 @@ class Measurement:
             action_indices[-1] += 1
             self.action_indices = tuple(action_indices)
 
+    def traceback(self):
+        """Print traceback if an error occurred.
+
+         Measurement must be ran from separate thread
+        """
+        if self.measurement_thread is None:
+            raise RuntimeError('Measurement was not started in separate thread')
+        else:
+            self.measurement_thread.traceback()
 
 def running_measurement() -> Measurement:
     return Measurement.running_measurement
