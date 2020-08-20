@@ -726,16 +726,36 @@ class _BaseParameter(Metadatable, SignalEmitter):
         return set_wrapper
 
     def define_get(self, get_function, wrap=None):
+        """Define a parameter.get function
+
+        The get function is called by ``parameter()``.
+
+        Args:
+            get_function: Parameter get function, should accept no args
+            wrap: Wrap get function, default is ``parameter.wrap_get``.
+                Wrapping adds many parameter features such as delays/ramping,
+                and should generally be done except for performance reasons.
+        """
         if wrap is None:
             wrap = self.wrap_get
 
         self.get_raw = get_function
         if wrap:
-            self.get =self._wrap_get(get_function)
+            self.get = self._wrap_get(get_function)
         else:
             self.get = get_function
 
     def define_set(self, set_function, wrap=None):
+        """Define a parameter.set function
+
+        The set function is called by ``parameter(value)``.
+
+        Args:
+            set_function: Parameter set function, should accept no args
+            wrap: Wrap get function, default is ``parameter.wrap_set``.
+                Wrapping adds many parameter features such as delays/ramping,
+                and should generally be done except for performance reasons.
+        """
         if wrap is None:
             wrap = self.wrap_set
 
