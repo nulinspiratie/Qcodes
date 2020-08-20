@@ -479,7 +479,7 @@ class Keithley_2450(VisaInstrument):
     def next_log_message(self, event_type="ALL"):
         log_message = self.ask(f":SYSTem:EVENtlog:NEXT? {event_type}")
         # Split into message components
-        error_code, full_message = log_message.split(",")
+        error_code, full_message = log_message.split(",", maxsplit=1)
         message, event_code, time = full_message.strip('"').split(";")
 
         if event_code == "0":
