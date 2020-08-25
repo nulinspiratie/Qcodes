@@ -100,7 +100,9 @@ class Triggered_Controller(AcquisitionController):
             'channel_selection',
             set_cmd=None,
             vals=vals.Lists(),
-            docstring='The list of channels on which to acquire data.'
+            docstring='The list of channels on which to acquire data. '
+                      'Note that newer models have 1-based channels, '
+                      'while older models are 0-based'
         )
 
         # Set_cmds are lambda to ensure current active_channels is used
@@ -210,7 +212,15 @@ class Triggered_Controller(AcquisitionController):
 
     @property
     def active_channels(self):
-        return self.digitizer.channels[self.channel_selection()]
+        # Note that channel_selection is either 1-based or 0-based
+        # try:
+        channels = self.channel_selection()
+        if not self.digitizer.zero_based_channels:
+            channels = [ch-1 for ch in channels]
+        return self.digitizer.channels[channels]
+        # except Exception as e:
+        #     print(e)
+        #     raise
 
     def set_trigger_channel(self, trigger_channel: str):
         """
@@ -241,7 +251,7 @@ class Triggered_Controller(AcquisitionController):
 
     def acquire(self):
         # Initialize record of acquisition times
-        self.acquisition_times = [[] for ch in self.channel_selection()]
+        self.acquisition_times = [[] for _ in self.channel_selection()]
         self.last_acquisition_time = time()
 
         self.buffers = {ch: np.zeros((self.traces_per_acquisition(),
@@ -264,7 +274,7 @@ class Triggered_Controller(AcquisitionController):
                 samples_to_get_even = samples_to_get + samples_to_get % 2
 
                 channel.n_points(samples_to_get_even)
-                logger.debug(f'Acquiring {samples_to_get} points from DAQ{ch}.')
+                logger.debug(f'Acquiring {samples_to_get} points from {channel.name}.')
 
                 t0 = time()
 
@@ -287,7 +297,7 @@ class Triggered_Controller(AcquisitionController):
                                        ' be increased.')
                 else:
                     raise RuntimeError(f'Failed to acquire {samples_to_get_even} samples, '
-                                       f'got {len(channel_data)} on ch{ch}. '
+                                       f'got {len(channel_data)} on {channel.name}. '
                                        f'Timeout {self.timeout():.3f}s')
 
                 channel_data = np.array(channel_data)
