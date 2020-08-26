@@ -35,8 +35,6 @@ class LoopManagerWidget(DOMWidget):
         # Maximum time difference between successive button presses
         self._layout_button_double_press_dt_max = 0.4
 
-        global _layout_button_last_pressed, max_t_press_diff
-
         self.updater = UpdaterThread(self.update_widget, interval=interval)
 
     def create_widgets(self):
@@ -198,7 +196,8 @@ class LoopManagerWidget(DOMWidget):
             ].value = f"Loop {loop_indices} of {loop_shape}"
 
             # Update notification checkbox
-            self.widgets["notify_checkbox"].value = qc.active_measurement().notify
+            notify_value = getattr(qc.active_measurement(), 'notify', False)
+            self.widgets["notify_checkbox"].value = notify_value
 
         # update layout button
         if self.layout:
@@ -215,9 +214,9 @@ class LoopManagerWidget(DOMWidget):
         if properties["name"] != "value":
             return
 
-        t_press_diff = time.perf_counter() - self._layout_button_double_press_dt_max
-        if t_press_diff > max_t_press_diff:
-            _layout_button_last_pressed = time.perf_counter()
+        t_press_diff = time.perf_counter() - self._layout_button_last_pressed
+        if t_press_diff > self._layout_button_double_press_dt_max:
+            self._layout_button_last_pressed = time.perf_counter()
             self.widgets["layout_button"].value = properties["old"]
         elif properties["new"]:
             self.layout.start()
