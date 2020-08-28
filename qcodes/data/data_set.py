@@ -84,7 +84,7 @@ def new_data(location=None, loc_record=None, name=None, overwrite=False,
     return DataSet(location=location, io=io, **kwargs)
 
 
-def load_data(location=None, formatter=None, io=None):
+def load_data(location=None, formatter=None, io=None, load_arrays=True):
     """
     Load an existing DataSet.
 
@@ -104,6 +104,8 @@ def load_data(location=None, formatter=None, io=None):
             says the root data directory is the current working directory, ie
             where you started the python session.
 
+        load_arrays (bool): Whether to load data arrays or only metadata
+
     Returns:
         A new ``DataSet`` object loaded with pre-existing data.
     """
@@ -113,7 +115,10 @@ def load_data(location=None, formatter=None, io=None):
 
     data = DataSet(location=location, formatter=formatter, io=io)
     data.read_metadata()
-    data.read()
+
+    if load_arrays:
+        data.read()
+
     return data
 
 class DataSet(DelegateAttributes):
