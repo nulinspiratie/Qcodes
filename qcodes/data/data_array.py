@@ -1,6 +1,7 @@
 import numpy as np
 import collections
 import warnings
+from typing import Iterable
 
 from qcodes.utils.helpers import DelegateAttributes, full_class, warn_units, \
     smooth
@@ -125,7 +126,12 @@ class DataArray(DelegateAttributes):
         self.unit = unit
         self.array_id = array_id
         self.is_setpoint = is_setpoint
-        self.action_indices = action_indices
+
+        if isinstance(action_indices, Iterable):
+            # Cast action indices into tuple if possible
+            self.action_indices = tuple(action_indices)
+        else:
+            self.action_indices = action_indices
         self.set_arrays = set_arrays
 
         self._preset = False
@@ -582,7 +588,7 @@ class DataArray(DelegateAttributes):
         """
         if len(indices) < len(self.shape):
             indices = indices + index_fill[len(indices):]
-        return np.ravel_multi_index(tuple(zip(indices)), self.shape)[0]
+        return np.ravel_multi_index(tuple(zip(indices)), self.shape, mode='wrap')[0]
 
     def _update_modified_range(self, low, high):
         if self.modified_range:
@@ -737,7 +743,9 @@ class DataArray(DelegateAttributes):
         warn_units('DataArray', self)
         return self.unit
 
-    ## Built-in numeric commands
+    # Built-in numeric commands
+
+    ## Math operators
     def __abs__(self):
         new_array = abs(self.ndarray)
         data_array = DataArray(name=self.name, label=self.label, unit=self.unit,
@@ -888,6 +896,7 @@ class DataArray(DelegateAttributes):
         data_array.data_set = self.data_set
         return data_array
 
+    ## Binary operations
     def __and__(self, other):
         new_array = self.ndarray & other
         data_array = DataArray(name=self.name, label=self.label,
@@ -1014,6 +1023,7 @@ class DataArray(DelegateAttributes):
         data_array.data_set = self.data_set
         return data_array
 
+    ## Unary operations
     def __pos__(self):
         return self
 
@@ -1027,3 +1037,12 @@ class DataArray(DelegateAttributes):
         data_array.data_set = self.data_set
         return data_array
 
+    def __invert__(self):
+        new_array = ~self.ndarray
+        data_array = DataArray(name=self.name, label=self.label,
+                               unit=self.unit,
+                               is_setpoint=self.is_setpoint,
+                               preset_data=new_array,
+                               set_arrays=self.set_arrays)
+        data_array.data_set = self.data_set
+        return data_array
