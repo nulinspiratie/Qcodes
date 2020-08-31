@@ -196,7 +196,8 @@ class LoopManagerWidget(DOMWidget):
             ].value = f"Loop {loop_indices} of {loop_shape}"
 
             # Update notification checkbox
-            self.widgets["notify_checkbox"].value = qc.active_measurement().notify
+            notify_value = getattr(qc.active_measurement(), 'notify', False)
+            self.widgets["notify_checkbox"].value = notify_value
 
         # update layout button
         if self.layout:
