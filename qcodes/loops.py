@@ -84,15 +84,21 @@ def active_dataset():
 
 
 def pause():
-    active_measurement().pause()
+    """Pause active measurement"""
+    if active_measurement() is not None:
+        active_measurement().pause()
 
 
 def resume():
-    active_measurement().resume()
+    """Resume active measurement"""
+    if active_measurement() is not None:
+        active_measurement().resume()
 
 
 def stop():
-    active_measurement().stop()
+    """Stop active measurement"""
+    if active_measurement() is not None:
+        active_measurement().stop()
 
 
 class Loop(Metadatable):
@@ -449,6 +455,11 @@ class ActiveLoop(Metadatable):
         ActiveLoop.flags['stop'] = True
         # Loop won't stop while paused
         ActiveLoop.resume()
+
+    @property
+    def active_action_name(self):
+        active_action = ActiveLoop.active_action
+        return getattr(active_action, 'name', '')
 
     def then(self, *actions, overwrite=False):
         """

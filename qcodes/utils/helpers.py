@@ -538,7 +538,8 @@ def define_func_from_string(func_name: str, code: str, shell: bool = True):
     if shell and using_ipython():
         from IPython import get_ipython
         shell = get_ipython()
-        shell.run_cell(function_code, store_history=True, silent=True)
+        result = shell.run_cell(function_code, store_history=True, silent=True)
+        result.raise_error()  # Only raises an error if the code produced one
 
         return eval(func_name, shell.user_global_ns)
     else:
@@ -832,20 +833,26 @@ class PerformanceTimer():
 
     @contextmanager
     def record(self, key, val=None):
-        if key not in self.timings:
-            self.timings[key] = []
+        if isinstance(key, str):
+            timing_list = self.timings.setdefault(key, [])
+        elif isinstance(key, (list)):
+            *parent_keys, subkey = key
+            d = self.timings.create_dicts(*parent_keys)
+            timing_list = d.setdefault(subkey, [])
+        else:
+            raise ValueError('Key must be str or list/tuple')
 
         if val is not None:
-            self.timings[key].append(val)
+            timing_list.append(val)
         else:
             t0 = time.perf_counter()
             yield
             t1 = time.perf_counter()
-            self.timings[key].append(t1 - t0)
+            timing_list.append(t1 - t0)
 
-        # Optionally remove oldest element
-        if len(self.timings[key]) > self.max_records:
-            self.timings[key] = self.timings[key][-100:]
+        # Optionally remove oldest elements
+        for _ in range(len(timing_list) - self.max_records):
+            timing_list.pop(0)
 
 
 def arreq_in_list(myarr: np.ndarray,
