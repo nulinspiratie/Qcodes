@@ -1,11 +1,11 @@
 from time import sleep
-
 import numpy as np
 from unittest import TestCase
 from functools import partial
+import logging
 
+from qcodes.config.config import DotDict
 from qcodes import Loop, Parameter, load_data, ParameterNode, new_job, MultiParameter
-
 from qcodes.measurement import Measurement, Sweep, running_measurement
 
 
@@ -76,20 +76,22 @@ class TestOldLoop(TestCase):
         loop.run(name="old_loop_1D_2D", thread=False)
 
 
-class TestNewLoop(TestCase):
+class TestNewLoopBasics(TestCase):
     def setUp(self) -> None:
         self.p_sweep = Parameter("p_sweep", set_cmd=None, initial_value=10)
         self.p_measure = Parameter("p_measure", set_cmd=None)
         self.p_sweep.connect(self.p_measure, scale=10)
+
+    def test_empty_measurement(self):
+        with Measurement("empty_measurement") as msmt:
+            pass
 
     def test_new_loop_1D(self):
         arrs = {}
 
         with Measurement("new_loop_1D") as msmt:
             for k, val in enumerate(Sweep(self.p_sweep.sweep(0, 1, 0.1))):
-                arr = arrs.setdefault(
-                    msmt.action_indices, np.zeros(msmt.loop_shape)
-                )
+                arr = arrs.setdefault(msmt.action_indices, np.zeros(msmt.loop_shape))
                 arr[k] = msmt.measure(self.p_measure)
 
         verify_msmt(msmt, arrs)
@@ -103,15 +105,13 @@ class TestNewLoop(TestCase):
 
         with Measurement("new_loop_1D_double") as msmt:
             for k, val in enumerate(Sweep(self.p_sweep.sweep(0, 1, 0.1))):
-                arr = arrs.setdefault(
-                    msmt.action_indices, np.zeros(msmt.loop_shape)
-                )
+                arr = arrs.setdefault(msmt.action_indices, np.zeros(msmt.loop_shape))
                 arr[k] = msmt.measure(self.p_measure)
 
-                arr = arrs.setdefault(
-                    msmt.action_indices, np.zeros(msmt.loop_shape)
-                )
+                arr = arrs.setdefault(msmt.action_indices, np.zeros(msmt.loop_shape))
                 arr[k] = msmt.measure(self.p_measure)
+
+        self.assertListEqual([(0, 0), (0, 1)], list(msmt.data_arrays))
 
         verify_msmt(msmt, arrs)
 
@@ -131,17 +131,17 @@ class TestNewLoop(TestCase):
         verify_msmt(msmt, arrs)
 
     def test_new_loop_dual_sweep(self):
-        with Measurement('outer') as msmt:
+        with Measurement("outer") as msmt:
             self.assertEqual(msmt.action_indices, (0,))
-            for _ in Sweep(range(10), 'sweep0'):
+            for _ in Sweep(range(10), "sweep0"):
                 self.assertEqual(msmt.action_indices, (0, 0))
-                for _ in Sweep(range(10), 'sweep1'):
+                for _ in Sweep(range(10), "sweep1"):
                     self.assertEqual(msmt.action_indices, (0, 0, 0))
-                    msmt.measure(np.random.rand(), 'random_value1')
+                    msmt.measure(np.random.rand(), "random_value1")
                 self.assertEqual(msmt.action_indices, (0, 1))
-                for _ in Sweep(range(10), 'sweep2'):
+                for _ in Sweep(range(10), "sweep2"):
                     self.assertEqual(msmt.action_indices, (0, 1, 0))
-                    msmt.measure(np.random.rand(), 'random_value2')
+                    msmt.measure(np.random.rand(), "random_value2")
 
     def test_new_loop_break(self):
         arrs = {}
@@ -158,36 +158,161 @@ class TestNewLoop(TestCase):
                     if kk == 2:
                         msmt.step_out(reduce_dimension=True)
                         break
-                print('hi')
+                print("hi")
 
         verify_msmt(msmt, arrs, allow_nan=True)
 
     def test_skip_action(self):
-        with Measurement('test') as msmt:
-            for k in Sweep(range(5), 'sweeper'):
-                msmt.measure(k, 'idx')
+        with Measurement("test") as msmt:
+            for k in Sweep(range(5), "sweeper"):
+                msmt.measure(k, "idx")
                 if k % 2:
-                    msmt.measure(2*k, 'double_idx')
+                    msmt.measure(2 * k, "double_idx")
                 else:
                     msmt.skip()
-                msmt.measure(3*k, 'triple_idx')
+                msmt.measure(3 * k, "triple_idx")
 
         arrs = {
             (0, 0): np.arange(5),
             (0, 1): [np.nan, 2, np.nan, 6, np.nan],
-            (0, 2): 3 * np.arange(5)
+            (0, 2): 3 * np.arange(5),
         }
 
         verify_msmt(msmt, arrs, allow_nan=True)
 
-    # def test_new_loop_0D(self):
-    #     # TODO Does not work yet
-    #     with Measurement('new_loop_0D') as msmt:
-    #         self.assertEqual(msmt.loop_shape, ())
-    #         msmt.measure(self.p_measure)
+    def test_new_loop_0D(self):
+        # TODO Does not work yet
+        with Measurement("new_loop_0D") as msmt:
+            self.assertEqual(msmt.loop_shape, ())
+            msmt.measure(self.p_measure)
 
-    # self.verify_msmt(msmt, arrs)
+    def test_new_loop_1D_0D(self):
+        # TODO Does not work yet
+        arrs = {}
 
+        with Measurement("new_loop_1D_0D") as msmt:
+            self.assertEqual(msmt.loop_shape, ())
+            for k, val in enumerate(Sweep(self.p_sweep.sweep(0, 1, 0.1))):
+                arr = arrs.setdefault(msmt.action_indices, np.zeros(msmt.loop_shape))
+                arr[k] = msmt.measure(self.p_measure)
+            arr = arrs.setdefault(msmt.action_indices, np.zeros((1,)))
+            arr[0] = msmt.measure(self.p_measure)
+
+        verify_msmt(msmt, arrs)
+
+        # self.verify_msmt(msmt, arrs)
+
+    def test_noniterable_sweep_error(self):
+        with Measurement("noniterable_sweep_error") as msmt:
+            with self.assertRaises(SyntaxError):
+                Sweep(1, "noniterable")
+
+    def test_new_loop_1D_None_result(self):
+        arrs = {}
+        p_measure = Parameter("p_measure", set_cmd=None)
+
+        with Measurement("new_loop_1D_None_result") as msmt:
+            for k, val in enumerate(Sweep(self.p_sweep.sweep(0, 1, 0.1))):
+                arr = arrs.setdefault(msmt.action_indices, np.zeros(msmt.loop_shape))
+
+                if not k % 2:
+                    p_measure(k)
+                else:
+                    p_measure(None)
+                arr[k] = msmt.measure(p_measure)
+
+        verify_msmt(msmt, arrs, allow_nan=True)
+
+        # Verify that the measurement dataset records the correct measurement type
+        data = load_data(msmt.dataset.location)
+        self.assertEqual(data.metadata.get("measurement_type"), "Measurement")
+
+    def test_new_loop_1D_None_result_raw_value(self):
+        arrs = {}
+        with Measurement("new_loop_1D_None_result") as msmt:
+            for k, val in enumerate(Sweep(self.p_sweep.sweep(0, 1, 0.1))):
+                arr = arrs.setdefault(msmt.action_indices, np.zeros(msmt.loop_shape))
+
+                if not k % 2:
+                    arr[k] = msmt.measure(k, "p")
+                else:
+                    arr[k] = msmt.measure(None, "p")
+
+        verify_msmt(msmt, arrs, allow_nan=True)
+
+        # Verify that the measurement dataset records the correct measurement type
+        data = load_data(msmt.dataset.location)
+        self.assertEqual(data.metadata.get("measurement_type"), "Measurement")
+
+    def test_measure_third_arg_error(self):
+        with Measurement("measure_third_arg_error") as msmt:
+            with self.assertRaises(TypeError):
+                msmt.measure(1232, "measurable", 1232)
+
+    def test_pass_label_unit(self):
+        with Measurement("new_loop_pass_label_unit") as msmt:
+            for k, val in enumerate(Sweep(self.p_sweep.sweep(0, 1, 0.1))):
+                msmt.measure(k, "measurable", label="MyLabel", unit="Hz")
+
+        # Verify that the measurement dataset records the correct measurement type
+        data = load_data(msmt.dataset.location)
+        self.assertEqual(data.measurable_0_0.label, "MyLabel")
+        self.assertEqual(data.measurable_0_0.unit, "Hz")
+
+    def test_pass_label_unit_to_parameter(self):
+        p_measure = Parameter(
+            "measurable", set_cmd=None, label="original_label", unit="V"
+        )
+        with Measurement("new_loop_pass_label_unit_to_parameter") as msmt:
+            for k, val in enumerate(Sweep(self.p_sweep.sweep(0, 1, 0.1))):
+                p_measure(k)
+                # Override label and unit
+                msmt.measure(p_measure, label="MyLabel", unit="Hz")
+
+        # Verify that the measurement dataset records the correct measurement type
+        data = load_data(msmt.dataset.location)
+        self.assertEqual(data.measurable_0_0.label, "MyLabel")
+        self.assertEqual(data.measurable_0_0.unit, "Hz")
+
+    def test_error_when_array_limit_reached(self):
+        with Measurement('error_when_array_limit_reached') as msmt:
+            for k in range(msmt.max_arrays+1):  # Note the lack of an encapsulating Sweep
+                if k < msmt.max_arrays:
+                    msmt.measure(123, 'measurable')
+                else:
+                    with self.assertRaises(RuntimeError):
+                        msmt.measure(123, 'measurable')
+
+    def test_odd_numpy_datatypes(self):
+        int_datatypes = [np.int8, np.int16, np.int32, np.int64, np.uint8, np.uint16, np.uint32, np.uint64]
+        float_datatypes = [np.float_]
+        for datatype in int_datatypes:
+            with Measurement(f'odd_datatype_{datatype.__name__}') as msmt:
+                msmt.measure(datatype(2), 'odd_value')
+
+    def test_notify(self):
+        try:
+            is_notified = []
+            Measurement.notify_function = lambda msmt, *args: is_notified.append(msmt.name)
+
+            with Measurement('notify_msmt'):
+                pass
+
+            self.assertListEqual(is_notified, [])
+
+            with Measurement('notify_msmt', notify=True) as msmt:
+                pass
+
+            self.assertListEqual(is_notified, ['notify_msmt'])
+
+            with self.assertRaises(RuntimeError):
+                with Measurement('notify_msmt_exception', notify=True) as msmt:
+                    raise RuntimeError
+
+            self.assertListEqual(is_notified, ['notify_msmt', 'notify_msmt_exception'])
+
+        finally:
+            Measurement.notify_function = None
 
 class TestNewLoopParameterNode(TestCase):
     class DictResultsNode(ParameterNode):
@@ -220,7 +345,10 @@ class TestNewLoopParameterNode(TestCase):
                 for key, val in self.results.items():
                     msmt.measure(val, name=key)
 
-            return {"wrong_result1": np.random.rand(), "wrong_result2": np.random.rand()}
+            return {
+                "wrong_result1": np.random.rand(),
+                "wrong_result2": np.random.rand(),
+            }
 
     def test_measure_node_nested(self):
         arrs = {}
@@ -256,7 +384,7 @@ class TestNewLoopFunctionResults(TestCase):
                     arrs.setdefault((0, 0, kk), np.zeros(msmt.loop_shape))
                     arrs[(0, 0, kk)][k] = result
 
-        self.assertEqual(msmt.data_groups[(0,0)].name, 'dict_function')
+        self.assertEqual(msmt.data_groups[(0, 0)].name, "dict_function")
 
         verify_msmt(msmt, arrs)
 
@@ -266,20 +394,20 @@ class TestNewLoopFunctionResults(TestCase):
 
         with Measurement("measure_node") as msmt:
             for k, val in enumerate(Sweep(p_sweep.sweep(0, 1, 0.1))):
-                results = msmt.measure(self.dict_function, name='custom_name')
+                results = msmt.measure(self.dict_function, name="custom_name")
 
                 # Save results to verification arrays
                 for kk, result in enumerate(results.values()):
                     arrs.setdefault((0, 0, kk), np.zeros(msmt.loop_shape))
                     arrs[(0, 0, kk)][k] = result
 
-        self.assertEqual(msmt.data_groups[(0,0)].name, 'custom_name')
+        self.assertEqual(msmt.data_groups[(0, 0)].name, "custom_name")
 
         verify_msmt(msmt, arrs)
 
     @staticmethod
     def nested_function(results):
-        with Measurement('nested_function_name') as msmt:
+        with Measurement("nested_function_name") as msmt:
             for key, val in results.items():
                 msmt.measure(val, name=key)
 
@@ -299,9 +427,51 @@ class TestNewLoopFunctionResults(TestCase):
                     arrs.setdefault((0, 0, kk), np.zeros(msmt.loop_shape))
                     arrs[(0, 0, kk)][k] = result
 
-        self.assertEqual(msmt.data_groups[(0,0)].name, 'nested_function_name')
+        self.assertEqual(msmt.data_groups[(0, 0)].name, "nested_function_name")
 
         verify_msmt(msmt, arrs)
+
+
+class TestNewLoopMeasureDict(TestCase):
+    def test_measure_dict(self):
+        with Measurement("measure_dict") as msmt:
+            for k in Sweep(range(10), "repetition"):
+                msmt.measure({"a": k, "b": 2 * k}, "dict_msmt")
+
+        verification_arrays = {(0, 0, 0): range(10), (0, 0, 1): 2 * np.arange(10)}
+        verify_msmt(msmt, verification_arrays=verification_arrays)
+
+    def test_measure_double_dict(self):
+        with Measurement("measure_double_dict") as msmt:
+            for k in Sweep(range(10), "repetition"):
+                msmt.measure({"a": k, "b": 2 * k}, "dict1_msmt")
+                msmt.measure({"a": k+1, "b": 2 * k+1}, "dict2_msmt")
+
+        verification_arrays = {
+            (0, 0, 0): range(10),
+            (0, 0, 1): 2 * np.arange(10),
+            (0, 1, 0): range(1, 11),
+            (0, 1, 1): 2 * np.arange(10) + 1,
+        }
+        self.assertListEqual(list(verification_arrays), list(msmt.data_arrays))
+        verify_msmt(msmt, verification_arrays=verification_arrays)
+
+    def test_measure_dict_no_name(self):
+        with Measurement("measure_dict") as msmt:
+            for k in Sweep(range(10), "repetition"):
+                with self.assertRaises(SyntaxError):
+                    msmt.measure({"a": k, "b": 2 * k})
+
+                msmt.measure({"a": k, "b": 2 * k}, "dict_msmt")
+
+    def test_measure_dict_wrong_ordering(self):
+        with Measurement("measure_dict") as msmt:
+            for k in Sweep(range(10), "repetition"):
+                if k < 5:
+                    msmt.measure({"a": k, "b": 2 * k}, "first_ordering")
+                else:
+                    with self.assertRaises(RuntimeError):
+                        msmt.measure({"b": k, "c": 2 * k}, "second_ordering")
 
 
 class TestNewLoopArray(TestCase):
@@ -353,6 +523,28 @@ class TestNewLoopArray(TestCase):
         set_array = np.broadcast_to(np.arange(12), (11, 5, 12))
         np.testing.assert_array_almost_equal(
             dataset.arrays["p_measure_set1_0_0_0"], set_array
+        )
+
+    def test_measure_parameter_array_2D_no_sweep(self):
+        # TODO not yet working
+        arrs = {}
+
+        p_measure = Parameter("p_measure", get_cmd=lambda: np.random.rand(5, 12))
+
+        with Measurement("new_loop_parameter_array_2D") as msmt:
+            result = msmt.measure(p_measure)
+            arrs[(0,)] = result
+
+        dataset = verify_msmt(msmt, arrs)
+
+        # Perform additional test on set arrays
+        np.testing.assert_array_almost_equal(
+            dataset.arrays["p_measure_set0_0"], np.arange(5)
+        )
+
+        set_array = np.broadcast_to(np.arange(12), (5, 12))
+        np.testing.assert_array_almost_equal(
+            dataset.arrays["p_measure_set1_0_0"], set_array
         )
 
     class MeasurableNode(ParameterNode):
@@ -456,22 +648,22 @@ class TestNewLoopNesting(TestCase):
         self.assertEqual(msmt.data_groups[(1, 0, 0)], inner_nested_msmt)
 
     def test_new_loop_two_nests(self):
-        with Measurement('outer') as msmt:
+        with Measurement("outer") as msmt:
             self.assertEqual(msmt.action_indices, (0,))
-            for _ in Sweep(range(10), 'sweep0'):
+            for _ in Sweep(range(10), "sweep0"):
                 self.assertEqual(msmt.action_indices, (0, 0))
-                with Measurement('inner1') as msmt_inner:
+                with Measurement("inner1") as msmt_inner:
                     self.assertEqual(msmt.action_indices, (0, 0, 0))
-                    for _ in Sweep(range(10), 'sweep1'):
+                    for _ in Sweep(range(10), "sweep1"):
                         self.assertEqual(msmt.action_indices, (0, 0, 0, 0))
-                        msmt.measure(np.random.rand(), 'random_value1')
+                        msmt.measure(np.random.rand(), "random_value1")
                     self.assertEqual(msmt.action_indices, (0, 0, 1))
                 self.assertEqual(msmt.action_indices, (0, 1))
-                with Measurement('inner2') as msmt_inner:
+                with Measurement("inner2") as msmt_inner:
                     self.assertEqual(msmt.action_indices, (0, 1, 0))
-                    for _ in Sweep(range(10), 'sweep2'):
+                    for _ in Sweep(range(10), "sweep2"):
                         self.assertEqual(msmt.action_indices, (0, 1, 0, 0))
-                        msmt.measure(np.random.rand(), 'random_value2')
+                        msmt.measure(np.random.rand(), "random_value2")
 
 
 class TestMeasurementThread(TestCase):
@@ -482,18 +674,17 @@ class TestMeasurementThread(TestCase):
     #     qc.utils.threading.allow_duplicate_jobs = False
 
     def create_measurement(self):
-        with Measurement('new_measurement') as msmt:
+        with Measurement("new_measurement") as msmt:
             msmt.pause()
-            for k in Sweep([1,2,3,4], name='sweep_vals'):
-                msmt.measure(123, 'test_val')
+            for k in Sweep([1, 2, 3, 4], name="sweep_vals"):
+                msmt.measure(123, "test_val")
 
     def test_double_thread_measurement(self):
         job = new_job(self.create_measurement)
         sleep(0.2)
         with self.assertRaises(RuntimeError):
-            with Measurement('new_measurement') as msmt:
-                print('This line will never be reached')
-                self.assertEqual(0, 1)
+            with Measurement("new_measurement") as msmt:
+                self.assertEqual(0, 1, 'Concurrent measurement test failed incorrectly.')
 
         running_measurement().resume()
         job.join()
@@ -501,9 +692,9 @@ class TestMeasurementThread(TestCase):
     def test_double_thread_measure(self):
         job = new_job(self.create_measurement)
         sleep(0.2)
-        msmt = Measurement('new_measurement')
+        msmt = Measurement("new_measurement")
         with self.assertRaises(RuntimeError):
-            msmt.measure(123, 'test_val')
+            msmt.measure(123, "test_val")
 
         running_measurement().resume()
         job.join()
@@ -511,83 +702,118 @@ class TestMeasurementThread(TestCase):
     def test_double_thread_sweep(self):
         job = new_job(self.create_measurement)
         sleep(0.2)
-        Sweep([1,2,3], 'sweep_parameter')
+        Sweep([1, 2, 3], "sweep_parameter")
 
         running_measurement().resume()
         job.join()
 
 
+class MultiParameterTest(MultiParameter):
+    def __init__(self, name):
+        super().__init__(
+            name=name,
+            names=("val1", "val2", "val3"),
+            units=("V", "Hz", ""),
+            shapes=((), (), ()),
+        )
+        self.values = (1, 2, 3)
+
+    def get_raw(self):
+        return self.values
+
+
 class TestMultiParameter(TestCase):
-    class TestMultiParameter(MultiParameter):
-        def __init__(self, name):
-            super().__init__(
-                name=name,
-                names=('val1', 'val2', 'val3'),
-                units=('V', 'Hz', ''),
-                shapes=((),(),())
-            )
-
-        def get_raw(self):
-            return (1, 2, 3)
-
     def test_basic_multi_parameter(self):
-        multi_parameter = self.TestMultiParameter('multi_param')
-        sweep_param = Parameter('sweep_param', set_cmd=None)
+        multi_parameter = MultiParameterTest("multi_param")
+        sweep_param = Parameter("sweep_param", set_cmd=None)
 
-        with Measurement('test_multi_parameter') as msmt:
+        with Measurement("test_multi_parameter") as msmt:
             for val in Sweep(sweep_param.sweep(0, 10, 1)):
                 msmt.measure(multi_parameter)
 
-        self.assertEqual(msmt.data_groups[(0,0)].name, 'multi_param')
+        self.assertEqual(msmt.data_groups[(0, 0)].name, "multi_param")
 
         verification_arrays = {
-            (0,0,0): [1] * 11,
-            (0,0,1): [2] * 11,
-            (0,0,2): [3] * 11
+            (0, 0, 0): [1] * 11,
+            (0, 0, 1): [2] * 11,
+            (0, 0, 2): [3] * 11,
         }
+
+        self.assertListEqual([(0, 0, 0), (0, 0, 1), (0, 0, 2)], list(msmt.data_arrays))
+
+        verify_msmt(msmt, verification_arrays=verification_arrays)
+
+    def test_double_multi_parameter(self):
+        multi_parameter1 = MultiParameterTest("multi_param1")
+        multi_parameter2 = MultiParameterTest("multi_param2")
+        multi_parameter2.values = (2,3,4)
+        sweep_param = Parameter("sweep_param", set_cmd=None)
+
+        with Measurement("test_double_multi_parameter") as msmt:
+            for val in Sweep(sweep_param.sweep(0, 10, 1)):
+                msmt.measure(multi_parameter1)
+                msmt.measure(multi_parameter2)
+
+        self.assertEqual(msmt.data_groups[(0, 0)].name, "multi_param1")
+        self.assertEqual(msmt.data_groups[(0, 1)].name, "multi_param2")
+
+        verification_arrays = {
+            (0, 0, 0): [1] * 11,
+            (0, 0, 1): [2] * 11,
+            (0, 0, 2): [3] * 11,
+            (0, 1, 0): [2] * 11,
+            (0, 1, 1): [3] * 11,
+            (0, 1, 2): [4] * 11,
+        }
+        self.assertListEqual(list(verification_arrays), list(msmt.data_arrays))
+
         verify_msmt(msmt, verification_arrays=verification_arrays)
 
 
 class TestVerifyActions(TestCase):
     def test_simple_measurement_verification(self):
-        with Measurement('test_simple_measurement_verification') as msmt:
-            for val in Sweep(range(10), 'sweep_param'):
-                msmt.measure(val + 2, 'msmt_param')
+        with Measurement("test_simple_measurement_verification") as msmt:
+            for val in Sweep(range(10), "sweep_param"):
+                msmt.measure(val + 2, "msmt_param")
 
     def test_simple_measurement_verification_error(self):
         with self.assertRaises(RuntimeError):
-            with Measurement('test_simple_measurement_verification_error') as msmt:
-                for k, val in enumerate(Sweep(range(10), 'sweep_param')):
+            with Measurement("test_simple_measurement_verification_error") as msmt:
+                for k, val in enumerate(Sweep(range(10), "sweep_param")):
                     if k < 7:
-                        msmt.measure(val + 2, 'msmt_param')
+                        msmt.measure(val + 2, "msmt_param")
                     else:
-                        msmt.measure(val + 2, 'different_msmt_param')
+                        msmt.measure(val + 2, "different_msmt_param")
 
     def test_simple_measurement_verification_parameter(self):
-        msmt_param = Parameter('msmt_param', get_cmd=np.random.rand)
-        with Measurement('test_simple_measurement_verification_parameter') as msmt:
-            for val in Sweep(range(10), 'sweep_param'):
+        msmt_param = Parameter("msmt_param", get_cmd=np.random.rand)
+        with Measurement("test_simple_measurement_verification_parameter") as msmt:
+            for val in Sweep(range(10), "sweep_param"):
                 msmt.measure(msmt_param)
 
     def test_simple_measurement_verification_error_parameter(self):
-        msmt_param = Parameter('msmt_param', get_cmd=np.random.rand)
-        different_msmt_param = Parameter('different_msmt_param', get_cmd=np.random.rand)
+        msmt_param = Parameter("msmt_param", get_cmd=np.random.rand)
+        different_msmt_param = Parameter("different_msmt_param", get_cmd=np.random.rand)
 
         with self.assertRaises(RuntimeError):
-            with Measurement('test_simple_measurement_verification_error_parameter') as msmt:
-                for k, _ in enumerate(Sweep(range(10), 'sweep_param')):
+            with Measurement(
+                "test_simple_measurement_verification_error_parameter"
+            ) as msmt:
+                for k, _ in enumerate(Sweep(range(10), "sweep_param")):
                     if k < 7:
                         msmt.measure(msmt_param)
                     else:
                         msmt.measure(different_msmt_param)
 
     def test_simple_measurement_verification_no_error_parameter(self):
-        msmt_param = Parameter('msmt_param', get_cmd=np.random.rand)
-        msmt_param2 = Parameter('msmt_param', get_cmd=np.random.rand)
+        msmt_param = Parameter("msmt_param", get_cmd=np.random.rand)
+        msmt_param2 = Parameter("msmt_param", get_cmd=np.random.rand)
         # Notice we give the same name
 
-        with Measurement('test_simple_measurement_verification_no_error_parameter') as msmt:
-            for k, _ in enumerate(Sweep(range(10), 'sweep_param')):
+        with Measurement(
+            "test_simple_measurement_verification_no_error_parameter"
+        ) as msmt:
+            for k, _ in enumerate(Sweep(range(10), "sweep_param")):
                 if k < 7:
                     msmt.measure(msmt_param)
                 else:
@@ -595,52 +821,561 @@ class TestVerifyActions(TestCase):
 
     def test_measure_callable_verification(self):
         def f():
-            return {
-                'param1': 1,
-                'param2': 2
-            }
+            return {"param1": 1, "param2": 2}
 
-        with Measurement('test_measure_callable_verification') as msmt:
-            for k, _ in enumerate(Sweep(range(10), 'sweep_param')):
+        with Measurement("test_measure_callable_verification") as msmt:
+            for k, _ in enumerate(Sweep(range(10), "sweep_param")):
                 msmt.measure(f)
 
     def test_measure_callable_verification_error(self):
         def f():
-            return {
-                'param1': 1,
-                'param2': 2
-            }
+            return {"param1": 1, "param2": 2}
+
         def f_same():
-            return {
-                'param1': 1,
-                'param2': 2
-            }
+            return {"param1": 1, "param2": 2}
+
         def different_f():
-            return {
-                'param2': 2,
-                'param1': 1
-            }
+            return {"param2": 2, "param1": 1}
 
         with self.assertRaises(RuntimeError):
-            with Measurement('test_measure_callable_verification_error1') as msmt:
-                for k, _ in enumerate(Sweep(range(10), 'sweep_param')):
+            with Measurement("test_measure_callable_verification_error1") as msmt:
+                for k, _ in enumerate(Sweep(range(10), "sweep_param")):
                     if k < 7:
                         msmt.measure(f)
                     else:
                         msmt.measure(different_f)
 
-        with Measurement('test_measure_callable_verification_error2') as msmt:
-            for k, _ in enumerate(Sweep(range(10), 'sweep_param')):
+        with Measurement("test_measure_callable_verification_error2") as msmt:
+            for k, _ in enumerate(Sweep(range(10), "sweep_param")):
                 if k < 7:
-                    msmt.measure(f, name='f')
+                    msmt.measure(f, name="f")
                 else:
-                    msmt.measure(f_same, name='f')
+                    msmt.measure(f_same, name="f")
 
         with self.assertRaises(RuntimeError):
-            with Measurement('test_measure_callable_verification_error3') as msmt:
-                for k, _ in enumerate(Sweep(range(10), 'sweep_param')):
+            with Measurement("test_measure_callable_verification_error3") as msmt:
+                for k, _ in enumerate(Sweep(range(10), "sweep_param")):
                     if k < 7:
-                        msmt.measure(f, name='f')
+                        msmt.measure(f, name="f")
                     else:
-                        msmt.measure(different_f, name='f')
+                        msmt.measure(different_f, name="f")
 
+
+class TestMask(TestCase):
+    def test_mask_attr(self):
+        class C:
+            def __init__(self):
+                self.x = 1
+
+        c = C()
+
+        with Measurement("mask_parameter") as msmt:
+            self.assertEqual(c.x, 1)
+            msmt.mask(c, x=2)
+            self.assertEqual(len(msmt._masked_properties), 1)
+            self.assertDictEqual(
+                msmt._masked_properties[0],
+                {
+                    "type": "attr",
+                    "obj": c,
+                    "attr": "x",
+                    "original_value": 1,
+                    "value": 2,
+                },
+            )
+
+            for k in Sweep(range(10), "repetition"):
+                msmt.measure({"a": 3, "b": 4}, "acquire_values")
+                self.assertEqual(c.x, 2)
+            self.assertEqual(c.x, 2)
+
+        self.assertEqual(c.x, 1)
+        self.assertEqual(len(msmt._masked_properties), 0)
+
+    def test_mask_attr(self):
+        class C:
+            def __init__(self):
+                self.x = 1
+
+        c = C()
+
+        with Measurement("mask_parameter") as msmt:
+            self.assertEqual(c.x, 1)
+            msmt.mask(c, x=2)
+            self.assertEqual(len(msmt._masked_properties), 1)
+            self.assertDictEqual(
+                msmt._masked_properties[0],
+                {
+                    "type": "attr",
+                    "obj": c,
+                    "attr": "x",
+                    "original_value": 1,
+                    "value": 2,
+                },
+            )
+
+            for k in Sweep(range(10), "repetition"):
+                msmt.measure({"a": 3, "b": 4}, "acquire_values")
+                self.assertEqual(c.x, 2)
+            self.assertEqual(c.x, 2)
+
+        self.assertEqual(c.x, 1)
+        self.assertEqual(len(msmt._masked_properties), 0)
+
+    def test_mask_attr_wrong(self):
+        class C:
+            def __init__(self):
+                self.x = 1
+
+        c = C()
+
+        with Measurement("mask_attr_wrong") as msmt:
+            with self.assertRaises(SyntaxError):
+                msmt.mask(c.x, 2)
+
+    def test_mask_config(self):
+        c = DotDict({"x": 1})
+
+        with Measurement("mask_parameter") as msmt:
+            self.assertEqual(c.x, 1)
+            msmt.mask(c, x=2)
+            self.assertEqual(len(msmt._masked_properties), 1)
+            self.assertDictEqual(
+                msmt._masked_properties[0],
+                {"type": "key", "obj": c, "key": "x", "original_value": 1, "value": 2},
+            )
+
+            for k in Sweep(range(10), "repetition"):
+                msmt.measure({"a": 3, "b": 4}, "acquire_values")
+                self.assertEqual(c.x, 2)
+            self.assertEqual(c.x, 2)
+
+        self.assertEqual(c.x, 1)
+        self.assertEqual(len(msmt._masked_properties), 0)
+
+    def test_mask_attr_does_not_exist(self):
+        c = DotDict()
+
+        with Measurement("mask_parameter") as msmt:
+            with self.assertRaises(KeyError):
+                msmt.mask(c, x=2)
+
+    def test_mask_parameter(self):
+        p = Parameter("masking_param", set_cmd=None, initial_value=1)
+
+        with Measurement("mask_parameter") as msmt:
+            self.assertEqual(p(), 1)
+            msmt.mask(p, 2)
+            self.assertEqual(len(msmt._masked_properties), 1)
+            self.assertDictEqual(
+                msmt._masked_properties[0],
+                {"type": "parameter", "obj": p, "original_value": 1, "value": 2},
+            )
+
+            for k in Sweep(range(10), "repetition"):
+                msmt.measure({"a": 3, "b": 4}, "acquire_values")
+                self.assertEqual(p(), 2)
+            self.assertEqual(p(), 2)
+
+        self.assertEqual(p(), 1)
+        self.assertEqual(len(msmt._masked_properties), 0)
+
+    def test_mask_parameter_attr(self):
+        p = Parameter("masking_param", set_cmd=None, initial_value=1)
+        p.x = 1
+
+        with Measurement("mask_parameter_attr") as msmt:
+            self.assertEqual(p.x, 1)
+            msmt.mask(p, x=2)
+            self.assertEqual(len(msmt._masked_properties), 1)
+            self.assertDictEqual(
+                msmt._masked_properties[0],
+                {
+                    "type": "attr",
+                    "obj": p,
+                    "attr": "x",
+                    "original_value": 1,
+                    "value": 2,
+                },
+            )
+
+            for k in Sweep(range(10), "repetition"):
+                msmt.measure({"a": 3, "b": 4}, "acquire_values")
+                self.assertEqual(p.x, 2)
+                self.assertEqual(p(), 1)
+            self.assertEqual(p.x, 2)
+
+        self.assertEqual(p.x, 1)
+        self.assertEqual(len(msmt._masked_properties), 0)
+
+    def test_mask_key(self):
+        c = dict(x=1)
+
+        with Measurement("mask_parameter") as msmt:
+            self.assertEqual(c["x"], 1)
+            msmt.mask(c, x=2)
+            self.assertEqual(len(msmt._masked_properties), 1)
+            self.assertDictEqual(
+                msmt._masked_properties[0],
+                {"type": "key", "obj": c, "key": "x", "original_value": 1, "value": 2},
+            )
+
+            for k in Sweep(range(10), "repetition"):
+                msmt.measure({"a": 3, "b": 4}, "acquire_values")
+                self.assertEqual(c["x"], 2)
+            self.assertEqual(c["x"], 2)
+
+        self.assertEqual(c["x"], 1)
+        self.assertEqual(len(msmt._masked_properties), 0)
+
+    def test_mask(self):
+        class C:
+            def __init__(self):
+                self.x = 1
+
+        c = C()
+        p = Parameter("masking_param", set_cmd=None, initial_value=1)
+        d = dict(x=1)
+
+        with Measurement("mask_parameter") as msmt:
+            self.assertEqual(c.x, 1)
+            self.assertEqual(p(), 1)
+            self.assertEqual(d["x"], 1)
+
+            msmt.mask(c, x=2)
+            msmt.mask(p, 2)
+            msmt.mask(d, x=2)
+
+            self.assertEqual(len(msmt._masked_properties), 3)
+            self.assertListEqual(
+                msmt._masked_properties,
+                [
+                    {
+                        "type": "attr",
+                        "obj": c,
+                        "attr": "x",
+                        "original_value": 1,
+                        "value": 2,
+                    },
+                    {"type": "parameter", "obj": p, "original_value": 1, "value": 2},
+                    {
+                        "type": "key",
+                        "obj": d,
+                        "key": "x",
+                        "original_value": 1,
+                        "value": 2,
+                    },
+                ],
+            )
+
+            for k in Sweep(range(10), "repetition"):
+                msmt.measure({"a": 3, "b": 4}, "acquire_values")
+                self.assertEqual(c.x, 2)
+                self.assertEqual(p(), 2)
+                self.assertEqual(d["x"], 2)
+            self.assertEqual(c.x, 2)
+            self.assertEqual(p(), 2)
+            self.assertEqual(d["x"], 2)
+
+        self.assertEqual(c.x, 1)
+        self.assertEqual(p(), 1)
+        self.assertEqual(d["x"], 1)
+        self.assertEqual(len(msmt._masked_properties), 0)
+
+    def test_double_mask(self):
+        d = DotDict({"x": 1})
+
+        with Measurement("mask_parameter") as msmt:
+            self.assertEqual(d.x, 1)
+            msmt.mask(d, x=2)
+            self.assertEqual(d.x, 2)
+            msmt.mask(d, x=3)
+            self.assertEqual(d.x, 3)
+            self.assertEqual(len(msmt._masked_properties), 2)
+            self.assertListEqual(
+                msmt._masked_properties,
+                [
+                    {
+                        "type": "key",
+                        "obj": d,
+                        "key": "x",
+                        "original_value": 1,
+                        "value": 2,
+                    },
+                    {
+                        "type": "key",
+                        "obj": d,
+                        "key": "x",
+                        "original_value": 2,
+                        "value": 3,
+                    },
+                ],
+            )
+
+            for k in Sweep(range(10), "repetition"):
+                msmt.measure({"a": 3, "b": 4}, "acquire_values")
+                self.assertEqual(d.x, 3)
+            self.assertEqual(d.x, 3)
+
+        self.assertEqual(d.x, 1)
+        self.assertEqual(len(msmt._masked_properties), 0)
+
+    def test_unmask_parameter(self):
+        p1 = Parameter("masking_param1", set_cmd=None, initial_value=1)
+        p2 = Parameter("masking_param2", set_cmd=None, initial_value=1)
+
+        with Measurement("mask_parameter") as msmt:
+            msmt.mask(p1, 2)
+            msmt.mask(p2, 3)
+
+            self.assertEqual(p1(), 2)
+            self.assertEqual(p2(), 3)
+
+            msmt.unmask(p2)
+            self.assertEqual(p1(), 2)
+            self.assertEqual(p2(), 1)
+
+        self.assertEqual(p1(), 1)
+        self.assertEqual(p2(), 1)
+
+    def test_unmask_parameter_attr(self):
+        p = Parameter("masking_param", set_cmd=None, initial_value=1)
+        p.x = 1
+
+        with Measurement("mask_parameter") as msmt:
+            msmt.mask(p, 2)
+            msmt.mask(p, x=3)
+
+            self.assertEqual(p(), 2)
+            self.assertEqual(p.x, 3)
+
+            msmt.unmask(p, attr="x")
+            self.assertEqual(p(), 2)
+            self.assertEqual(p.x, 1)
+
+        self.assertEqual(p(), 1)
+        self.assertEqual(p.x, 1)
+
+    def test_mask_parameters_in_node(self):
+        node = ParameterNode('node', use_as_attributes=True)
+        node.p1 = Parameter(set_cmd=None, initial_value=1)
+        node.p2 = Parameter(set_cmd=None, initial_value=2)
+        node.p3 = 3
+
+        with Measurement('mask_parameters_in_node') as msmt:
+            msmt.mask(node, p1=42, p2=43, p3=44)
+
+            self.assertEqual(node.p1, 42)
+            self.assertEqual(node.p2, 43)
+            self.assertEqual(node.p3, 44)
+
+        self.assertEqual(node.p1, 1)
+        self.assertEqual(node.p2, 2)
+        self.assertEqual(node.p3, 3)
+
+
+class TestMeasurementControl(TestCase):
+    def test_revert_1D(self):
+        arrs = {}
+
+        with Measurement("revert_1D") as msmt:
+            p_measure = Parameter('p_measure', set_cmd=None)
+            p_sweep = Parameter('p_sweep', set_cmd=None)
+
+            for k, val in enumerate(Sweep(p_sweep.sweep(0, 1, 0.1))):
+                arr = arrs.setdefault(msmt.action_indices, np.zeros(msmt.loop_shape))
+                p_measure(1)
+                arr[k] = msmt.measure(p_measure)
+
+                if k == 5:
+                    msmt.revert()
+                    p_measure(2)
+                    arr[k] = msmt.measure(p_measure)
+
+        self.assertListEqual([(0, 0)], list(msmt.data_arrays))
+
+        verify_msmt(msmt, arrs)
+
+    def test_revert_1D_twice(self):
+        arrs = {}
+
+        with Measurement("revert_1D_twice") as msmt:
+            p_measure1 = Parameter('p_measure1', set_cmd=None)
+            p_measure2 = Parameter('p_measure2', set_cmd=None)
+            p_sweep = Parameter('p_sweep', set_cmd=None)
+
+            for k, val in enumerate(Sweep(p_sweep.sweep(0, 1, 0.1))):
+                arr1 = arrs.setdefault(msmt.action_indices, np.zeros(msmt.loop_shape))
+                p_measure1(1)
+                arr1[k] = msmt.measure(p_measure1)
+
+                arr2 = arrs.setdefault(msmt.action_indices, np.zeros(msmt.loop_shape))
+                p_measure2(2)
+                arr2[k] = msmt.measure(p_measure2)
+
+                if k == 5:
+                    msmt.revert(2)
+                    p_measure1(3)
+                    p_measure2(4)
+                    arr1[k] = msmt.measure(p_measure1)
+                    arr2[k] = msmt.measure(p_measure2)
+
+        verify_msmt(msmt, arrs)
+
+    def test_revert_multi_parameter(self):
+        multi_parameter = MultiParameterTest("multi_param")
+        sweep_param = Parameter("sweep_param", set_cmd=None)
+
+        with Measurement("test_multi_parameter") as msmt:
+            for k, val in enumerate(Sweep(sweep_param.sweep(0, 10, 1))):
+                msmt.measure(multi_parameter)
+
+                if k == 4:
+                    msmt.revert()
+
+                    multi_parameter.values = (2,3,4)
+                    msmt.measure(multi_parameter)
+                    multi_parameter.values = (1,2,3)
+
+        self.assertEqual(msmt.data_groups[(0, 0)].name, "multi_param")
+
+        verification_arrays = {
+            (0, 0, 0): [1] * 11,
+            (0, 0, 1): [2] * 11,
+            (0, 0, 2): [3] * 11,
+        }
+        for key, val in verification_arrays.items():
+            val[4] += 1
+
+        verify_msmt(msmt, verification_arrays=verification_arrays)
+
+    def test_step_out(self):
+        with Measurement('test_step_out') as msmt:
+            for k in Sweep(range(5), 'outer_sweep'):
+                for kk in Sweep(range(5), 'inner_sweep'):
+                    msmt.measure(123, 'measurable')
+
+                    if kk > 2:
+                        msmt.step_out()
+                        break
+
+        verification_arrays = {
+            (0, 0, 0): 123 * np.ones((5,5)),
+        }
+        verification_arrays[(0,0,0)][:,4:] = np.nan
+
+        verify_msmt(msmt, verification_arrays=verification_arrays, allow_nan=True)
+
+    def test_step_out_multiparameter(self):
+        multi_parameter = MultiParameterTest("multi_param")
+
+        with Measurement('test_step_out_multiparameter') as msmt:
+            for k in Sweep(range(5), 'outer_sweep'):
+                for kk in Sweep(range(5), 'inner_sweep'):
+                    msmt.measure(multi_parameter)
+
+                    if kk > 2:
+                        msmt.step_out()
+                        break
+
+        verification_arrays = {
+            (0, 0, 0, 0): 1 * np.ones((5,5)),
+            (0, 0, 0, 1): 2 * np.ones((5,5)),
+            (0, 0, 0, 2): 3 * np.ones((5,5)),
+        }
+        verification_arrays[(0,0,0,0)][:,4:] = np.nan
+        verification_arrays[(0,0,0,2)][:,4:] = np.nan
+        verification_arrays[(0,0,0,1)][:,4:] = np.nan
+
+        verify_msmt(msmt, verification_arrays=verification_arrays, allow_nan=True)
+
+
+class ListHandler(logging.Handler):  # Inherit from logging.Handler
+    def __init__(self, log_list):
+        # run the regular Handler __init__
+        logging.Handler.__init__(self)
+        self.setLevel(logging.DEBUG)
+        # Our custom argument
+        self.log_list = log_list
+
+    def emit(self, record):
+        # record.message is the log message
+        self.log_list.append(record.msg)
+
+
+class TestMeasurementFail(TestCase):
+    def setUp(self):
+        logging.basicConfig(level=logging.DEBUG, format='%(message)s')
+        logger = logging.getLogger()
+        logger.level = logging.DEBUG
+        self.log_list = []
+        self.handler = ListHandler(self.log_list)
+        logging.getLogger().addHandler(self.handler)
+
+    def tearDown(self):
+        logging.getLogger().removeHandler(self.handler)
+        print('Stopped logging')
+
+        Measurement.final_actions.clear()
+        Measurement.except_actions.clear()
+
+    def test_measurement_fail_message(self):
+        with self.assertRaises(RuntimeError):
+            with Measurement('measurement_fail') as msmt:
+                raise RuntimeError('help')
+
+        self.assertTrue(any('Measurement error RuntimeError(help)' in msg for msg in self.log_list))
+
+    def test_measurement_except_final_actions(self):
+        p_except = Parameter(initial_value=42, set_cmd=None)
+        p_final = Parameter(initial_value=41, set_cmd=None)
+
+        with self.assertRaises(RuntimeError):
+            with Measurement('measurement_fail') as msmt:
+                msmt.except_actions.append(partial(p_except, 43))
+                msmt.final_actions.append(partial(p_final, 40))
+
+                raise RuntimeError('help')
+
+        self.assertEqual(p_except(), 43)
+        self.assertEqual(p_final(), 40)
+
+    def test_measurement_except_final_actions_no_fail(self):
+        p_except = Parameter(initial_value=42, set_cmd=None)
+        p_final = Parameter(initial_value=41, set_cmd=None)
+
+        with Measurement('measurement_fail') as msmt:
+            msmt.except_actions.append(partial(p_except, 43))
+            msmt.final_actions.append(partial(p_final, 40))
+
+        self.assertEqual(p_except(), 42)
+        self.assertEqual(p_final(), 40)
+
+    def test_global_Measurement_except_final_actions(self):
+        p_except = Parameter(initial_value=42, set_cmd=None)
+        p_final = Parameter(initial_value=41, set_cmd=None)
+
+        Measurement.except_actions.append(partial(p_except, 43))
+        Measurement.final_actions.append(partial(p_final, 40))
+
+        with self.assertRaises(RuntimeError):
+            with Measurement('measurement_fail') as msmt:
+                pass
+
+                raise RuntimeError('help')
+
+        self.assertEqual(p_except(), 43)
+        self.assertEqual(p_final(), 40)
+
+    def test_global_Measurement_except_final_actions_no_fail(self):
+        p_except = Parameter(initial_value=42, set_cmd=None)
+        p_final = Parameter(initial_value=41, set_cmd=None)
+
+        Measurement.except_actions.append(partial(p_except, 43))
+        Measurement.final_actions.append(partial(p_final, 40))
+
+        with Measurement('measurement_fail') as msmt:
+            pass
+
+        self.assertEqual(p_except(), 42)
+        self.assertEqual(p_final(), 40)

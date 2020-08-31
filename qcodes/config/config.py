@@ -452,6 +452,44 @@ class DotDict(dict):
         items.extend(self.keys())
         return items
 
+    def setdefault(self, key, default=None):
+        """Set value of a key if it does not yet exist"""
+        d = self
+        if isinstance(key, str):
+            *parent_keys, key = key.split('.')
+            for subkey in parent_keys:
+                d = dict.setdefault(d, subkey, DotDict())
+
+        return dict.setdefault(d, key, default)
+
+    def create_dicts(self, *keys):
+        """Create nested dict structure
+
+        Args:
+            *keys: Sequence of key strings. Empty DotDicts will be created if
+                each key does not yet exist
+
+        Returns:
+            Most inner dict, newly created if it does not yet exist
+
+        Examples:
+            d = DotDict()
+            d.create_dicts('a', 'b', 'c')
+
+            print(d.a.b.c)
+            >>> {}
+
+
+        """
+        d = self
+        for key in keys:
+            if key in self:
+                assert isinstance(d[key], dict)
+
+            d.setdefault(key, DotDict())
+            d = d[key]
+        return d
+
 def update(d, u):
     for k, v in u.items():
         if isinstance(v, collections.Mapping):

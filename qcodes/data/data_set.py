@@ -2,6 +2,7 @@
 
 import time
 import logging
+from warnings import warn
 from traceback import format_exc
 from copy import deepcopy
 from collections import OrderedDict
@@ -13,6 +14,7 @@ from .io import DiskIO
 from .location import FormatLocation
 from qcodes.utils.helpers import DelegateAttributes, full_class, deep_update, \
     get_last_input_cells
+from .data_array import DataArray
 
 log = logging.getLogger(__name__)
 
@@ -82,7 +84,7 @@ def new_data(location=None, loc_record=None, name=None, overwrite=False,
     return DataSet(location=location, io=io, **kwargs)
 
 
-def load_data(location=None, formatter=None, io=None):
+def load_data(location=None, formatter=None, io=None, load_arrays=True):
     """
     Load an existing DataSet.
 
@@ -102,6 +104,8 @@ def load_data(location=None, formatter=None, io=None):
             says the root data directory is the current working directory, ie
             where you started the python session.
 
+        load_arrays (bool): Whether to load data arrays or only metadata
+
     Returns:
         A new ``DataSet`` object loaded with pre-existing data.
     """
@@ -111,7 +115,10 @@ def load_data(location=None, formatter=None, io=None):
 
     data = DataSet(location=location, formatter=formatter, io=io)
     data.read_metadata()
-    data.read()
+
+    if load_arrays:
+        data.read()
+
     return data
 
 class DataSet(DelegateAttributes):
@@ -639,6 +646,24 @@ class DataSet(DelegateAttributes):
 
         return deepcopy(self.metadata)
 
+    def print_measurement(self, silent: bool = False, return_str: bool = False):
+        """Print the measurement cell
+
+        Args:
+            silent: Whether to print the results
+            return_str: Whether to return the measurement code as a string
+        """
+        if 'measurement_code' in self.metadata:
+            measurement_code = self.metadata['measurement_code']
+            measurement_code = measurement_code.replace('\\n', '\n')
+            if not silent:
+                print(measurement_code)
+
+            if return_str:
+                return measurement_code
+        else:
+            warn('Metadata does not contain measurement code')
+
     def get_array_metadata(self, array_id):
         """
         Get the metadata for a single contained DataArray.
@@ -654,18 +679,77 @@ class DataSet(DelegateAttributes):
         except (AttributeError, KeyError):
             return None
 
-    def get_arrays(self, name=None):
-        arrays = self.arrays
+    def get_arrays(
+            self,
+            name: bool = None,
+            full_match: bool = True,
+            action_indices: tuple = None,
+            set_arrays: bool = False
+    ):
+        """Get arrays matching criteria
+
+        Args:
+            name: array name
+            full_match: Whether the array name should exactly match ``name``.
+                If False, the array name should contain ``name``
+            action_indices: All array action indices must start with the provided
+                indices.
+            set_arrays: Whether to include setpoint arrays
+        """
+        arrays = sorted(self.arrays.values(), key=lambda arr:arr.action_indices)
 
         if name is not None:
-            arrays = [arr for arr in arrays.values() if arr.name == name]
+            if full_match:
+                arrays = [arr for arr in arrays if arr.name == name]
+            else:
+                arrays = [arr for arr in arrays if name in arr.name]
+
+        if action_indices is not None:
+            action_indices = tuple(action_indices)
+            arrays = [
+                arr for arr in arrays
+                if arr.action_indices[:len(action_indices)] == action_indices
+            ]
+
+        if not set_arrays:
+            arrays = [arr for arr in arrays if not arr.is_setpoint]
+
+        if not arrays:
+            log.warning(f"Could not find any arrays with name {name}")
 
         return arrays
 
-    def get_array(self, name=None):
-        arrays = self.get_arrays(name=name)
-        assert len(arrays) == 1, f"Could not find unique array with name {name}"
-        return arrays[0]
+    def get_array(
+            self,
+            name: str = None,
+            action_indices: tuple = None,
+            set_arrays: bool = False
+    ) -> DataArray:
+        """Get unique array matching criteria, raising an error if not unique
+
+        Args:
+            name: Name of array
+            action_indices: All array action indices must start with the provided
+                indices.
+            set_arrays: Whether to include setpoint arrays
+
+        Returns:
+             Unique DataArray matching criteria
+
+        Raises:
+            RuntimeError if more/less than one array matches criteria
+        """
+        arrays = self.get_arrays(
+            name=name,
+            action_indices=action_indices,
+            set_arrays=set_arrays
+        )
+        if not arrays:
+            raise RuntimeError(f"Could not find any array with name {name}")
+        elif len(arrays) > 1:
+            raise RuntimeError(f'Found {len(arrays)} instead of 1 with name {name}')
+        else:
+            return arrays[0]
 
     def __repr__(self):
         """Rich information about the DataSet and contained arrays."""

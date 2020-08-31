@@ -69,7 +69,7 @@ class LoggingWidget(logging.StreamHandler):
             return
 
         # Add message to stack
-        timestamp = time.strftime('%H:%m:%S')
+        timestamp = time.strftime('%H:%M:%S')
         message = f'{timestamp} - {sender}: {msg}'
         options = list(self.widget.options)
         options = [message] + options
