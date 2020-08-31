@@ -127,6 +127,7 @@ class Loop(Metadatable):
     data), ``Wait`` times, or other ``ActiveLoop``\s or ``Loop``\s to nest inside
     this one.
     """
+    notify = False  # Irrelevant, see Measurement
 
     def __init__(self, sweep_values, delay=0, station=None,
                  progress_interval=None):
@@ -389,6 +390,7 @@ class ActiveLoop(Metadatable):
     # Perform any actions during looping (will be reset after measurement is done)
     interleave_actions = []
     interleave_action_results = [] # Stored interleaving results
+    notify = False  # Irrelevant, see Measurement
 
     def __init__(self, sweep_values, delay, *actions, then_actions=(),
                  station=None, progress_interval=None, bg_task=None,
