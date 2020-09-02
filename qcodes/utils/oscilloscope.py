@@ -198,9 +198,8 @@ class OscilloscopeProcess:
             self.img_2D.translate(0, 0)
             self.img_2D.scale(1/self.sample_rate*1e3, 1)
 
-            self.ax_2D.getAxis('bottom').setLabel('Time', 's')
+            self.ax_2D.getAxis('bottom').setLabel('Time', 'ms')
             self.ax_2D.getAxis('left').setLabel('Repetition', '')
-
 
             self.ax_2D.addItem(self.img_2D)
         else:
@@ -208,14 +207,7 @@ class OscilloscopeProcess:
             self.ax_2D = None
             self.img_2D = None
 
-        # subplot_object = self.win.addPlot()
-        #
-        # for side in ('left', 'bottom'):
-        #     ax = subplot_object.getAxis(side)
-        #     ax.setPen(self.theme[0])
-        #     ax._qcodes_label = ''
         self.ax_1D.disableAutoRange()
-        #         self.ax.showGrid(x=True, y=True, alpha=0.2)
 
         try:
             self.curves = [
@@ -326,7 +318,7 @@ class OscilloscopeProcess:
 
             self.ax_1D.showGrid(x=True, y=True)
             self.ax_1D.disableAutoRange()
-            self.ax_1D.setRange(xRange=(0, max(t_list_scaled)), yRange=self.ylim)
+            self.ax_1D.setRange(xRange=(0, max(t_list_scaled)), yRange=self.ylim, padding=0)
             self.format_axis(time_prefix=time_prefix)
 
             self.t_last_update = time.perf_counter()
@@ -341,7 +333,7 @@ class OscilloscopeProcess:
         # PyQtGraph treats the first dimension as the x axis
         arr = arr.transpose()
 
-        t_list = np.arange(points) / self.sample_rate
+        t_list = np.arange(points) / self.sample_rate * 1e3
         repetitions = np.arange(samples)
 
         # Extract highest engineering exponent (-9, -6, -3) for rescaling
@@ -352,6 +344,16 @@ class OscilloscopeProcess:
 
         try:
             self.img_2D.setImage(arr)
+
+            self.ax_2D.setRange(xRange=(0, max(t_list)), yRange=(0, samples), padding=0)
+
+            # self.ax_2D.disableAutoRange()
+            # self.ax_2D.setRange(xRange=(0, max(t_list)), yRange=(0, samples))
+            # self.ax_2D.getViewBox().setXRange(0, max(t_list))
+            # self.ax_2D.vb.setLimits(xMin=0, xMax=max(t_list), yMin=0, yMax=samples)
+            # self.ax_2D.setRange(xRange=[5,20])
+
+
             # curve = self.curves[k]
             # channel_settings = self.channels_settings.get(channel, {})
             #
@@ -372,27 +374,3 @@ class OscilloscopeProcess:
 
         except Exception:
             print(traceback.format_exc())
-
-    def test(self, samples, points, **kwargs):
-        data = self.np_array_2D[:, :samples, :points][0]
-        import pyqtgraph as pg
-        pl = self.ax_2D
-        image = pg.ImageItem()
-
-        pl.addItem(image)
-
-        hist = pg.HistogramLUTItem()
-        # Contrast/color control
-        hist.setImageItem(image)
-        # pl.addItem(hist)
-
-        image.setImage(data)
-        pos = np.array([0., 1., 0.5, 0.25, 0.75])
-        color = np.array([[0, 0, 255, 255], [255, 0, 0, 255], [0, 255, 0, 255], (0, 255, 255, 255), (255, 255, 0, 255)],
-                     dtype=np.ubyte)
-        cmap = pg.ColorMap(pos, color)
-        lut = cmap.getLookupTable(0.0, 1.0, 256)
-        image.setLookupTable(lut)
-
-        hist.gradient.setColorMap(cmap)
-        pl.autoRange()
