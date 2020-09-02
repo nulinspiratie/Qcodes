@@ -47,10 +47,12 @@ class Oscilloscope:
         ylim=(-2, 2),
         interval=0.1,
         channel_plot_2D=None,
+        show_1D_from_2D: bool = False
     ):
         self.max_samples = max_samples
         self.max_points = max_points
         self.channel_plot_2D = channel_plot_2D
+        self.show_1D_from_2D = show_1D_from_2D
 
         assert isinstance(channels, (list, tuple))
         self.channels = channels
@@ -101,7 +103,8 @@ class Oscilloscope:
                 sample_rate=self.sample_rate,
                 ylim=self.ylim,
                 interval=self.interval,
-                channel_plot_2D=self.channel_plot_2D
+                channel_plot_2D=self.channel_plot_2D,
+                show_1D_from_2D=self.show_1D_from_2D
             ),
         )
         self.process.start()
@@ -171,7 +174,8 @@ class OscilloscopeProcess:
         sample_rate,
         ylim,
         interval,
-        channel_plot_2D
+        channel_plot_2D,
+        show_1D_from_2D
     ):
         self.shape_1D = shape_1D
         self.shape_2D = shape_2D
@@ -182,6 +186,10 @@ class OscilloscopeProcess:
         self.ylim = ylim
         self.interval = interval
         self.channel_plot_2D = channel_plot_2D
+        self.show_1D_from_2D = show_1D_from_2D
+        
+        self.samples = None
+        self.points = None
 
         self.mp_array_1D = mp_array_1D
         self.np_array_1D = np.frombuffer(mp_array_1D, dtype=np.float64).reshape(self.shape_1D)
@@ -221,40 +229,48 @@ class OscilloscopeProcess:
 
     def process_loop(self):
         while self.active:
-            info = self.queue.get()
-            message = info.pop("message")
+            if not self.queue.empty():
+                info = self.queue.get()
+                message = info.pop("message")
 
-            if message == "new_trace_1D":
-                # Show a single trace
-                if (
-                    self.t_last_update is None
-                    or self.interval is None
-                    or time.perf_counter() - self.t_last_update > self.interval
-                ):
-                    self.update_plot_1D(**info)
-            elif message == 'new_trace_2D':
-                # Show a 2D plot of traces
-                if (
-                    self.t_last_update is None
-                    or self.interval is None
-                    or time.perf_counter() - self.t_last_update > self.interval
-                ):
-                    self.update_plot_2D(**info)
+                if message == "new_trace_1D":
+                    # Show a single trace
+                    if (
+                        self.t_last_update is None
+                        or self.interval is None
+                        or time.perf_counter() - self.t_last_update > self.interval
+                    ):
+                        self.update_plot_1D(**info)
+                elif message == 'new_trace_2D':
+                    # Show a 2D plot of traces
+                    if (
+                        self.t_last_update is None
+                        or self.interval is None
+                        or time.perf_counter() - self.t_last_update > self.interval
+                    ):
+                        self.update_plot_2D(**info)
+                        self.counter_1D_from_2D = 0
 
-            elif message == "stop":
-                self.active = False
-            elif message == "clear":
-                if hasattr(self.win, "clear"):
-                    self.win.clear()
-            elif message == "update_settings":
-                self.update_settings(**info)
-            elif message == "execute":
-                try:
-                    exec(info["code"])
-                except Exception:
-                    print(traceback.format_exc())
-            else:
-                raise RuntimeError()
+                elif message == "stop":
+                    self.active = False
+                elif message == "clear":
+                    if hasattr(self.win, "clear"):
+                        self.win.clear()
+                elif message == "update_settings":
+                    self.update_settings(**info)
+                elif message == "execute":
+                    try:
+                        exec(info["code"])
+                    except Exception:
+                        print(traceback.format_exc())
+                else:
+                    raise RuntimeError()
+
+            if self.show_1D_from_2D and self.samples is not None and self.counter_1D_from_2D < self.samples:
+                self.update_plot_1D_from_2D(self.counter_1D_from_2D)
+                self.counter_1D_from_2D += 1
+
+            time.sleep(self.interval)
 
     def initialize_plot(self, figsize):
         if not self.__class__.process:
@@ -292,6 +308,8 @@ class OscilloscopeProcess:
         self.ax_1D.setLabels(left="Voltage (V)", bottom=f"Time ({time_prefix}s)")
 
     def update_plot_1D(self, points, **kwargs):
+        self.points = points
+
         arr = self.np_array_1D[:, :points]
 
         t_list = np.arange(points) / self.sample_rate
@@ -327,6 +345,9 @@ class OscilloscopeProcess:
             print(traceback.format_exc())
 
     def update_plot_2D(self, samples, points, **kwargs):
+        self.samples = samples
+        self.points = points
+
         channel_idx = self.channels.index(self.channel_plot_2D)
         arr = self.np_array_2D[channel_idx, :samples, :points]
 
@@ -374,3 +395,9 @@ class OscilloscopeProcess:
 
         except Exception:
             print(traceback.format_exc())
+
+    def update_plot_1D_from_2D(self, sample_idx):
+        sample_array = self.np_array_2D[:, sample_idx, :self.points]
+        self.np_array_1D[:, :self.points] = sample_array
+        self.update_plot_1D(points=self.points)
+
