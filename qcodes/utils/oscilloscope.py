@@ -125,7 +125,7 @@ class Oscilloscope:
 
         if isinstance(array, dict):
             # Convert dict with an array per channel into a single array
-            array = np.array(list(array.values()))
+            array = np.array([array[ch] for ch in self.channels])
 
         points = array.shape[1]
         assert points <= self.max_points
@@ -138,7 +138,7 @@ class Oscilloscope:
     def update_array_2D(self, array):
         if isinstance(array, dict):
             # Convert dict with an array per channel into a single array
-            array = np.array(list(array.values()))
+            array = np.array([array[ch] for ch in self.channels])
 
         channels, samples, points = array.shape
 
