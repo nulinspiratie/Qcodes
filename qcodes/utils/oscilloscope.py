@@ -128,7 +128,9 @@ class Oscilloscope:
             array = np.array(list(array.values()))
 
         points = array.shape[1]
-        assert points <= self.max_points
+        if points > self.max_points:
+            array = array[:,:self.max_points]
+            points = self.max_points
 
         # Copy new array to shared array
         self.np_array_1D[:, :points] = array
@@ -143,8 +145,12 @@ class Oscilloscope:
         channels, samples, points = array.shape
 
         assert channels == len(self.channels)
-        assert samples <= self.max_samples
-        assert points <= self.max_points
+        if samples > self.max_samples:
+            samples = self.max_samples
+            array = array[:, :samples, :]
+        if points > self.max_points:
+            points = self.max_points
+            array = array[:, :, :points]
 
         # Copy new array to shared array
         self.np_array_2D[:, :samples, :points] = array
