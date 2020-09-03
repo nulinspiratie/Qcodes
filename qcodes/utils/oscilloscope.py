@@ -41,7 +41,7 @@ class Oscilloscope():
             channels_settings=None,
             figsize=(1200, 350),
             sample_rate=200e3,
-            ylim=[-2, 2],
+            ylim=(-2, 2),
             interval=0.1
         ):
         self.max_points = max_points
@@ -68,8 +68,6 @@ class Oscilloscope():
         self.queue = mp.Queue()
 
         self.process = None
-
-
 
     def start_process(self):
         self.process = mp.Process(
