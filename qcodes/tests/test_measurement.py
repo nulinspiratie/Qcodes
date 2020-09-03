@@ -684,8 +684,7 @@ class TestMeasurementThread(TestCase):
         sleep(0.2)
         with self.assertRaises(RuntimeError):
             with Measurement("new_measurement") as msmt:
-                print("This line will never be reached")
-                self.assertEqual(0, 1)
+                self.assertEqual(0, 1, 'Concurrent measurement test failed incorrectly.')
 
         running_measurement().resume()
         job.join()

@@ -683,7 +683,8 @@ class DataSet(DelegateAttributes):
             self,
             name: bool = None,
             full_match: bool = True,
-            action_indices: tuple = None
+            action_indices: tuple = None,
+            set_arrays: bool = False
     ):
         """Get arrays matching criteria
 
@@ -693,6 +694,7 @@ class DataSet(DelegateAttributes):
                 If False, the array name should contain ``name``
             action_indices: All array action indices must start with the provided
                 indices.
+            set_arrays: Whether to include setpoint arrays
         """
         arrays = sorted(self.arrays.values(), key=lambda arr:arr.action_indices)
 
@@ -709,10 +711,39 @@ class DataSet(DelegateAttributes):
                 if arr.action_indices[:len(action_indices)] == action_indices
             ]
 
+        if not set_arrays:
+            arrays = [arr for arr in arrays if not arr.is_setpoint]
+
+        if not arrays:
+            log.warning(f"Could not find any arrays with name {name}")
+
         return arrays
 
-    def get_array(self, name=None, action_indices=None) -> DataArray:
-        arrays = self.get_arrays(name=name, action_indices=action_indices)
+    def get_array(
+            self,
+            name: str = None,
+            action_indices: tuple = None,
+            set_arrays: bool = False
+    ) -> DataArray:
+        """Get unique array matching criteria, raising an error if not unique
+
+        Args:
+            name: Name of array
+            action_indices: All array action indices must start with the provided
+                indices.
+            set_arrays: Whether to include setpoint arrays
+
+        Returns:
+             Unique DataArray matching criteria
+
+        Raises:
+            RuntimeError if more/less than one array matches criteria
+        """
+        arrays = self.get_arrays(
+            name=name,
+            action_indices=action_indices,
+            set_arrays=set_arrays
+        )
         if not arrays:
             raise RuntimeError(f"Could not find any array with name {name}")
         elif len(arrays) > 1:

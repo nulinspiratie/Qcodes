@@ -84,16 +84,19 @@ def active_dataset():
 
 
 def pause():
+    """Pause active measurement"""
     if active_measurement() is not None:
         active_measurement().pause()
 
 
 def resume():
+    """Resume active measurement"""
     if active_measurement() is not None:
         active_measurement().resume()
 
 
 def stop():
+    """Stop active measurement"""
     if active_measurement() is not None:
         active_measurement().stop()
 
