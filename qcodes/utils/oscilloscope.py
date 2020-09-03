@@ -3,7 +3,7 @@ import numpy as np
 import multiprocessing as mp
 import logging
 import time
-from collections import namedtuple, deque
+from collections import namedtuple
 
 import pyqtgraph as pg
 import pyqtgraph.multiprocess as pgmp
@@ -125,7 +125,7 @@ class Oscilloscope:
 
         if isinstance(array, dict):
             # Convert dict with an array per channel into a single array
-            array = np.array([array[ch] for ch in self.channels])
+            array = np.array(list(array.values()))
 
         points = array.shape[1]
         assert points <= self.max_points
@@ -138,7 +138,7 @@ class Oscilloscope:
     def update_array_2D(self, array):
         if isinstance(array, dict):
             # Convert dict with an array per channel into a single array
-            array = np.array([array[ch] for ch in self.channels])
+            array = np.array(list(array.values()))
 
         channels, samples, points = array.shape
 
@@ -224,33 +224,29 @@ class OscilloscopeProcess:
         except:
             print(traceback.format_exc())
 
-        self.t_last_update = None
         self.process_loop()
+
+    def log(self, message):
+        # print(message)
+        pass
 
     def process_loop(self):
         while self.active:
+            t0 = time.perf_counter()
             if not self.queue.empty():
-                info = self.queue.get()
+                while not self.queue.empty():
+                    info = self.queue.get(block=False)
+
                 message = info.pop("message")
+                self.log(f'Received message: {message}')
 
                 if message == "new_trace_1D":
                     # Show a single trace
-                    if (
-                        self.t_last_update is None
-                        or self.interval is None
-                        or time.perf_counter() - self.t_last_update > self.interval
-                    ):
-                        self.update_plot_1D(**info)
+                    self.update_plot_1D(**info)
                 elif message == 'new_trace_2D':
                     # Show a 2D plot of traces
-                    if (
-                        self.t_last_update is None
-                        or self.interval is None
-                        or time.perf_counter() - self.t_last_update > self.interval
-                    ):
-                        self.update_plot_2D(**info)
-                        self.counter_1D_from_2D = 0
-
+                    self.update_plot_2D(**info)
+                    self.counter_1D_from_2D = 0
                 elif message == "stop":
                     self.active = False
                 elif message == "clear":
@@ -270,7 +266,9 @@ class OscilloscopeProcess:
                 self.update_plot_1D_from_2D(self.counter_1D_from_2D)
                 self.counter_1D_from_2D += 1
 
-            time.sleep(self.interval)
+            dt = time.perf_counter() - t0
+            if self.interval - dt > 0:
+                time.sleep(self.interval - dt)
 
     def initialize_plot(self, figsize):
         if not self.__class__.process:
@@ -339,7 +337,7 @@ class OscilloscopeProcess:
             self.ax_1D.setRange(xRange=(0, max(t_list_scaled)), yRange=self.ylim, padding=0)
             self.format_axis(time_prefix=time_prefix)
 
-            self.t_last_update = time.perf_counter()
+            self.log(f'updating 1D plot')
 
         except Exception:
             print(traceback.format_exc())
@@ -391,7 +389,7 @@ class OscilloscopeProcess:
             # self.ax_2D.setRange(xRange=(0, max(t_list_scaled)), yRange=self.ylim)
             # self.format_axis(time_prefix=time_prefix)
 
-            self.t_last_update = time.perf_counter()
+            self.log(f'updating 2D plot')
 
         except Exception:
             print(traceback.format_exc())
@@ -400,4 +398,5 @@ class OscilloscopeProcess:
         sample_array = self.np_array_2D[:, sample_idx, :self.points]
         self.np_array_1D[:, :self.points] = sample_array
         self.update_plot_1D(points=self.points)
+        self.log(f'updating 1D plot idx {sample_idx} from 2D trace')
 
