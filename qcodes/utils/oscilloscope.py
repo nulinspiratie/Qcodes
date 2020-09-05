@@ -5,6 +5,9 @@ import logging
 import time
 from collections import namedtuple
 
+from qcodes.instrument.parameter_node import ParameterNode, parameter
+from qcodes.instrument.parameter import Parameter
+
 import pyqtgraph as pg
 import pyqtgraph.multiprocess as pgmp
 from pyqtgraph.multiprocess.remoteproxy import ClosedError
@@ -16,7 +19,7 @@ logger = logging.getLogger(__name__)
 # https://stackoverflow.com/questions/17103698/plotting-large-arrays-in-pyqtgraph?rq=1
 
 
-class Oscilloscope:
+class Oscilloscope(ParameterNode):
     """Create an oscilloscope GUI that displays acquisition traces
 
     Example code:
@@ -49,6 +52,7 @@ class Oscilloscope:
         channel_plot_2D=None,
         show_1D_from_2D: bool = False
     ):
+        super().__init__('oscilloscope', use_as_attributes=True)
         self.max_samples = max_samples
         self.max_points = max_points
         self.channel_plot_2D = channel_plot_2D
@@ -88,6 +92,28 @@ class Oscilloscope:
 
         self.process = None
 
+        self.clim = Parameter(initial_value=None)
+
+    @parameter
+    def clim_vals(self, parameter, value):
+        if value is None:
+            return True
+        elif isinstance(value, tuple) and len(value) == 2:
+            return True
+        else:
+            return False
+
+    @parameter
+    def clim_set(self, parameter, value):
+        """Set 2D colorscale limits
+
+        cmin and cmax must both be floats that set the limits, or they are both
+        None, in which case the limits are automatically scaled
+        """
+        if isinstance(value, tuple):
+            cmin, cmax = value
+            self._run_code(f'self.img_2D.setLevels(({cmin}, {cmax}))')
+
     def start_process(self):
         self.process = mp.Process(
             target=OscilloscopeProcess,
@@ -106,6 +132,7 @@ class Oscilloscope:
                 channel_plot_2D=self.channel_plot_2D,
                 show_1D_from_2D=self.show_1D_from_2D
             ),
+            daemon=True
         )
         self.process.start()
 
@@ -155,9 +182,13 @@ class Oscilloscope:
         # Copy new array to shared array
         self.np_array_2D[:, :samples, :points] = array
 
-        self.queue.put(
-            {"message": "new_trace_2D", "samples": samples, "points": points}
-        )
+        info = {"message": "new_trace_2D", "samples": samples, "points": points}
+
+        # Add clim if needed
+        if self.clim is not None:
+            info['levels'] = self.clim
+
+        self.queue.put(info)
 
     def _run_code(self, code):
         self.queue.put({"message": "execute", "code": code})
@@ -193,7 +224,7 @@ class OscilloscopeProcess:
         self.interval = interval
         self.channel_plot_2D = channel_plot_2D
         self.show_1D_from_2D = show_1D_from_2D
-        
+
         self.samples = None
         self.points = None
 
@@ -368,7 +399,7 @@ class OscilloscopeProcess:
         t_list_scaled = t_list / 10 ** highest_engineering_exponent
 
         try:
-            self.img_2D.setImage(arr)
+            self.img_2D.setImage(arr, **kwargs)
 
             self.ax_2D.setRange(xRange=(0, max(t_list)), yRange=(0, samples), padding=0)
 
