@@ -1,3 +1,4 @@
+from typing import Sequence
 import traceback
 import numpy as np
 import multiprocessing as mp
@@ -113,6 +114,12 @@ class Oscilloscope(ParameterNode):
         if isinstance(value, tuple):
             cmin, cmax = value
             self._run_code(f'self.img_2D.setLevels(({cmin}, {cmax}))')
+
+    def snapshot_base(self, update: bool=False,
+                      params_to_skip_update: Sequence[str]=None,
+                      skip_parameters: Sequence[str] = (),
+                      skip_parameter_nodes: Sequence[str] = ()):
+        return {}
 
     def start_process(self):
         self.process = mp.Process(
