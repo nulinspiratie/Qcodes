@@ -19,3 +19,7 @@
 .hidden-cell {
     padding: 0.05em !important;
 }
+.widget-label {
+    margin: 0;
+    font-size: 10pt;
+}

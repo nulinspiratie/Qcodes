@@ -51,6 +51,8 @@ class Triggered_AcquisitionController(AcquisitionController):
         self.channel_selection = None
         self.samples_per_record = None
 
+        self.buffer_actions = []
+
     def setup(self, **kwargs):
         """
         Setup the ATS controller by updating most current ATS values and setting
@@ -99,11 +101,14 @@ class Triggered_AcquisitionController(AcquisitionController):
                 buffer_slice = slice(
                     self.buffer_idx * self.records_per_buffer,
                     (self.buffer_idx + 1) * self.records_per_buffer)
-                self.buffers[ch][buffer_slice] = segmented_buffer.pop(ch_name)
+                self.buffers[ch][buffer_slice] = segmented_buffer.get(ch_name)
         else:
             logging.warning('Ignoring extra ATS buffer')
 
         self.buffer_idx += 1
+
+        for buffer_action in self.buffer_actions:
+            buffer_action(segmented_buffer)
 
     def post_acquire(self):
         # average over records in buffer:

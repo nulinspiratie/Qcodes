@@ -1,11 +1,10 @@
-import sys
 import numpy as np
-from typing import List, Tuple, Union, Sequence, Dict, Any, Callable
+from typing import List, Tuple, Union, Sequence, Dict, Any, Callable, Iterable
 import threading
-from time import sleep
+from time import sleep, perf_counter
 import traceback
 import logging
-from functools import partial
+from datetime import datetime
 
 from qcodes.station import Station
 from qcodes.data.data_set import new_data, DataSet
@@ -16,15 +15,16 @@ from qcodes.instrument.parameter_node import ParameterNode
 from qcodes.utils.helpers import (
     using_ipython,
     directly_executed_from_cell,
-    get_last_input_cells
+    get_last_input_cells,
+    PerformanceTimer
 )
+from qcodes import config as qcodes_config
 
-
-logger = logging.getLogger(__name__)
-
+RAW_VALUE_TYPES = (float, int, bool, np.ndarray, np.integer, np.floating, np.bool_, type(None))
 
 class Measurement:
-    """
+    """Class to perform measurements
+
     Args:
         name: Measurement name, also used as the dataset name
         force_cell_thread: Enforce that the measurement has been started from a
@@ -34,6 +34,8 @@ class Measurement:
             An error is raised if this has not been satisfied.
             Note that if the measurement is started within a function, no error
             is raised.
+        notify: Notify when measurement is complete.
+            The function `Measurement.notify_function` must be set
 
 
     Notes:
@@ -52,9 +54,20 @@ class Measurement:
     _default_measurement_name = "msmt"
     _default_dataset_name = "data"
     final_actions = []
+    except_actions = []
+    max_arrays = 100
 
-    def __init__(self, name: str, force_cell_thread: bool = True):
+    # Notification function, called if notify=True.
+    # Function should receive the following arguments:
+    # Measurement object, exception_type, exception_message, traceback
+    # The last three are only not None if an error has occured
+    notify_function = None
+
+    def __init__(self, name: str, force_cell_thread: bool = True, notify=False):
         self.name = name
+
+        # Dataset is created during `with Measurement('name')`
+        self.dataset = None
 
         # Total dimensionality of loop
         self.loop_shape: Union[Tuple[int], None] = None
@@ -76,6 +89,8 @@ class Measurement:
         self.is_paused: bool = False  # Whether the Measurement is paused
         self.is_stopped: bool = False  # Whether the Measurement is stopped
 
+        self.notify = notify
+
         self.force_cell_thread = force_cell_thread and using_ipython()
 
         # Each measurement can have its own final actions, to be executed
@@ -83,6 +98,27 @@ class Measurement:
         # Note that there are also Measurement.final_actions, which are always
         # executed when the outermost measurement finishes
         self.final_actions = []
+        self.except_actions = []
+        self._masked_properties = []
+
+        self.timings = PerformanceTimer()
+
+    def log(self, message: str, level="info"):
+        """Send a log message
+
+        Args:
+            message: Text to log
+            level: Logging level (debug, info, warning, error)
+        """
+        assert level in ["debug", "info", "warning", "error"]
+        logger = logging.getLogger("msmt")
+        log_function = getattr(logger, level)
+
+        # Append measurement name
+        if self.name is not None:
+            message += f" - {self.name}"
+
+        log_function(message)
 
     @property
     def data_groups(self) -> Dict[Tuple[int], "Measurement"]:
@@ -95,7 +131,12 @@ class Measurement:
     def active_action(self):
         return self.actions.get(self.action_indices, None)
 
+    @property
+    def active_action_name(self):
+        return self.action_names.get(self.action_indices, None)
+
     def __enter__(self):
+        """Operation when entering a loop"""
         self.is_context_manager = True
 
         # Encapsulate everything in a try/except to ensure that the context
@@ -111,7 +152,11 @@ class Measurement:
                 self.dataset.active = True
 
                 self._initialize_metadata(self.dataset)
-                self.dataset.save_metadata()
+                with self.timings.record('save_metadata'):
+                    self.dataset.save_metadata()
+
+                    if hasattr(self.dataset, 'save_config'):
+                        self.dataset.save_config()
 
                 # Initialize attributes
                 self.loop_shape = ()
@@ -119,6 +164,8 @@ class Measurement:
                 self.action_indices = (0,)
                 self.data_arrays = {}
                 self.set_arrays = {}
+
+                self.log('Measurement started')
 
             else:
                 if threading.current_thread() is not Measurement.measurement_thread:
@@ -159,6 +206,7 @@ class Measurement:
                 shell.user_ns[self._default_measurement_name] = self
                 shell.user_ns[self._default_dataset_name] = self.dataset
 
+
             return self
         except:
             # An error has occured, ensure running_measurement is cleared
@@ -166,33 +214,48 @@ class Measurement:
                 Measurement.running_measurement = None
             raise
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Exception, exc_val, exc_tb):
+        """Operation when exiting a loop
+
+        Args:
+            exc_type: Type of exception, None if no exception
+            exc_val: Exception message, None if no exception
+            exc_tb: Exception traceback object, None if no exception
+        """
         msmt = Measurement.running_measurement
         if msmt is self:
             # Immediately unregister measurement as main measurement, in case
             # an error occurs during final actions.
             Measurement.running_measurement = None
 
-        for final_action in self.final_actions:
-            try:
-                final_action()
-            except Exception as e:
-                logger.error(
-                    f'Could not execute final action {final_action} \n'
-                    f'{traceback.format_exc()}'
+        if exc_type is not None:
+            self.log(f"Measurement error {exc_type.__name__}({exc_val})", level="error")
+
+            self._apply_actions(self.except_actions, label="except", clear=True)
+
+            if msmt is self:
+                self._apply_actions(
+                    Measurement.except_actions, label="global except", clear=True
                 )
+
+        self._apply_actions(self.final_actions, label="final", clear=True)
+
+        self.unmask_all()
+
         if msmt is self:
             # Also perform global final actions
             # These are always performed when outermost measurement finishes
-            for final_action in Measurement.final_actions:
-                try:
-                    final_action()
-                except Exception as e:
-                    logger.error(
-                        f'Could not execute final action {final_action} \n'
-                        f'{traceback.format_exc()}'
-                    )
+            self._apply_actions(Measurement.final_actions, label="global final")
 
+            # Notify that measurement is complete
+            if self.notify and self.notify_function is not None:
+                try:
+                    self.notify_function(exc_type, exc_val, exc_tb)
+                except:
+                    self.log("Could not notify", level="error")
+
+            t_stop = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            self.dataset.add_metadata({"t_stop": t_stop})
             self.dataset.finalize()
             self.dataset.active = False
 
@@ -202,13 +265,18 @@ class Measurement:
         self.is_context_manager = False
 
     def _initialize_metadata(self, dataset: DataSet = None):
+        """Initialize dataset metadata"""
         if dataset is None:
             dataset = self.dataset
+
+        config = qcodes_config.get('user', {}).get('silq_config', qcodes_config)
+        dataset.add_metadata({"config": config})
 
         dataset.add_metadata({"measurement_type": "Measurement"})
 
         # Add instrument information
-        dataset.add_metadata({'station': Station.default.snapshot()})
+        if Station.default is not None:
+            dataset.add_metadata({"station": Station.default.snapshot()})
 
         if using_ipython():
             measurement_cell = get_last_input_cells(1)[0]
@@ -218,13 +286,16 @@ class Measurement:
             # initial code that should be stripped
             init_string = "get_ipython().run_cell_magic('new_job', '', "
             if measurement_code.startswith(init_string):
-                measurement_code = measurement_code[len(init_string)+1:-4]
+                measurement_code = measurement_code[len(init_string) + 1 : -4]
 
-            dataset.add_metadata({
-                'measurement_cell': measurement_cell,
-                'measurement_code': measurement_code,
-                'last_input_cells': get_last_input_cells(20)
-            })
+            dataset.add_metadata(
+                {
+                    "measurement_cell": measurement_cell,
+                    "measurement_code": measurement_code,
+                    "last_input_cells": get_last_input_cells(20),
+                    "t_start": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }
+            )
 
     # Data array functions
     def _create_data_array(
@@ -232,7 +303,6 @@ class Measurement:
         action_indices: Tuple[int],
         result,
         parameter: Parameter = None,
-        ndim: int = None,
         is_setpoint: bool = False,
         name: str = None,
         label: str = None,
@@ -250,8 +320,6 @@ class Measurement:
                 string, in which case it is the data_array name
             result: Result returned by the Parameter
             action_indices: Action indices for which to store parameter
-            ndim: Number of dimensions. If not provided, will use length of
-                action_indices
             is_setpoint: Whether the Parameter is used for sweeping or measuring
             label: Data array label. If not provided, the parameter label is
                 used. If the parameter is a name string, the label is extracted
@@ -267,8 +335,12 @@ class Measurement:
                 "When creating a data array, must provide either a parameter or a name"
             )
 
-        if ndim is None:
-            ndim = len(action_indices)
+        if len(running_measurement().data_arrays) >= self.max_arrays:
+            raise RuntimeError(
+                f"Number of arrays in dataset exceeds "
+                f"Measurement.max_arrays={self.max_arrays}. Perhaps you forgot"
+                f"to encapsulate a loop with a Sweep()?"
+            )
 
         array_kwargs = {
             "is_setpoint": is_setpoint,
@@ -279,11 +351,19 @@ class Measurement:
         if is_setpoint or isinstance(result, (np.ndarray, list)):
             array_kwargs["shape"] += np.shape(result)
 
+        # Use dummy index (1, ) if measurement is performed outside a Sweep
+        if not array_kwargs["shape"]:
+            array_kwargs["shape"] = (1,)
+
         if isinstance(parameter, Parameter):
             array_kwargs["parameter"] = parameter
             # Add a custom name
             if name is not None:
                 array_kwargs["full_name"] = name
+            if label is not None:
+                array_kwargs["label"] = label
+            if unit is not None:
+                array_kwargs["unit"] = unit
         else:
             array_kwargs["name"] = name
             if label is None:
@@ -294,7 +374,7 @@ class Measurement:
         # Add setpoint arrays
         if not is_setpoint:
             array_kwargs["set_arrays"] = self._add_set_arrays(
-                action_indices, result, name=(name or parameter.name), ndim=ndim
+                action_indices, result, name=(name or parameter.name)
             )
 
         data_array = DataArray(**array_kwargs)
@@ -305,7 +385,8 @@ class Measurement:
         data_array.init_data()
 
         self.dataset.add_array(data_array)
-        self.dataset.save_metadata()
+        with self.timings.record('save_metadata'):
+            self.dataset.save_metadata()
 
         # Add array to set_arrays or to data_arrays of this Measurement
         if is_setpoint:
@@ -316,10 +397,11 @@ class Measurement:
         return data_array
 
     def _add_set_arrays(
-        self, action_indices: Tuple[int], result, name: str, ndim: int,
+        self, action_indices: Tuple[int], result, name: str,
     ):
+        """Create set arrays for a given action index"""
         set_arrays = []
-        for k in range(1, ndim):
+        for k in range(1, len(action_indices)):
             sweep_indices = action_indices[:k]
             if sweep_indices in self.set_arrays:
                 set_arrays.append(self.set_arrays[sweep_indices])
@@ -345,12 +427,24 @@ class Measurement:
                 )
                 set_arrays.append(set_array)
 
-        return tuple(set_arrays)
+        # Add a dummy array in case the measurement was performed outside of
+        # a Sweep. This is not needed if the result is an array
+        if not set_arrays and not self.loop_indices:
+            set_arrays = [
+                self._create_data_array(
+                    action_indices=running_measurement().action_indices,
+                    result=result,
+                    name="None",
+                    is_setpoint=True,
+                )
+            ]
+            set_arrays[0][0] = 1
 
-    # def _add_data_group(self, data_group):
+        return tuple(set_arrays)
 
     def get_arrays(self, action_indices: Sequence[int] = None) -> List[DataArray]:
         """Get all arrays belonging to the current action indices
+
         If the action indices corresponds to a group of arrays (e.g. a nested
         measurement or ParameterNode), all the arrays in the group are returned
 
@@ -387,8 +481,8 @@ class Measurement:
                 self.action_names[self.action_indices] = name
         elif name != self.action_names[self.action_indices]:
             raise RuntimeError(
-                f'Wrong measurement at action_indices {self.action_indices}. '
-                f'Expected: {self.action_names[self.action_indices]}. Received: {name}'
+                f"Wrong measurement at action_indices {self.action_indices}. "
+                f"Expected: {self.action_names[self.action_indices]}. Received: {name}"
             )
 
     def _add_measurement_result(
@@ -396,12 +490,16 @@ class Measurement:
         action_indices,
         result,
         parameter=None,
-        ndim=None,
         store: bool = True,
         name: str = None,
         label: str = None,
         unit: str = None,
     ):
+        """Store single measurement result
+
+        This method is called from type-specific methods, such as
+        ``_measure_value``, ``_measure_parameter``, etc.
+        """
         if parameter is None and name is None:
             raise SyntaxError(
                 "When adding a measurement result, must provide either a "
@@ -415,7 +513,6 @@ class Measurement:
                 action_indices,
                 result,
                 parameter=parameter,
-                ndim=ndim,
                 name=name,
                 label=label,
                 unit=unit,
@@ -456,13 +553,39 @@ class Measurement:
                 arr = np.broadcast_to(arr, result.shape[: k + 1])
                 data_to_store[set_array.array_id] = arr
 
+        # Use dummy index if there are no loop indices.
+        # This happens if the measurement is performed outside a Sweep
+        loop_indices = self.loop_indices
+        if not loop_indices and not isinstance(result, (list, np.ndarray)):
+            loop_indices = (0,)
+
         if store:
-            self.dataset.store(self.loop_indices, data_to_store)
+            self.dataset.store(loop_indices, data_to_store)
 
         return data_to_store
 
+    def _apply_actions(self, actions: list, label="", clear=False):
+        """Apply actions, either except_actions or final_actions"""
+        for action in actions:
+            try:
+                action()
+            except Exception as e:
+                self.log(
+                    f"Could not execute {label} action {action} \n"
+                    f"{traceback.format_exc()}",
+                    level="error",
+                )
+
+        if clear:
+            actions.clear()
+
     # Measurement-related functions
-    def _measure_parameter(self, parameter, name=None, **kwargs):
+    def _measure_parameter(self, parameter, name=None, label=None, unit=None, **kwargs):
+        """Measure parameter and store results.
+
+        Called from `measure`.
+        MultiParameter is called separately.
+        """
         name = name or parameter.name
 
         # Ensure measuring parameter matches the current action_indices
@@ -472,22 +595,33 @@ class Measurement:
         result = parameter(**kwargs)
 
         self._add_measurement_result(
-            self.action_indices, result, parameter=parameter, name=name
+            self.action_indices,
+            result,
+            parameter=parameter,
+            name=name,
+            label=label,
+            unit=unit,
         )
 
         return result
 
     def _measure_multi_parameter(self, multi_parameter, name=None, **kwargs):
+        """Measure MultiParameter and store results
+
+        Called from `measure`
+
+        Notes:
+            - Does not store setpoints yet
+        """
         name = name or multi_parameter.name
 
         # Ensure measuring multi_parameter matches the current action_indices
         self._verify_action(action=multi_parameter, name=name, add_if_new=True)
 
-        results_list = multi_parameter(**kwargs)
+        with self.timings.record(['measurement', self.action_indices, 'get']):
+            results_list = multi_parameter(**kwargs)
 
-        results = {
-            name: result for name, result in zip(multi_parameter.names, results_list)
-        }
+        results = dict(zip(multi_parameter.names, results_list))
 
         if name is None:
             name = multi_parameter.name
@@ -505,6 +639,12 @@ class Measurement:
         return results
 
     def _measure_callable(self, callable, name=None, **kwargs):
+        """Measure a callable (function) and store results
+
+        The function should return a dict, from which each item is measured.
+        If the function already contains creates a Measurement, the return
+        values aren't stored.
+        """
         # Determine name
         if name is None:
             if hasattr(callable, "__self__") and isinstance(
@@ -514,9 +654,7 @@ class Measurement:
             elif hasattr(callable, "__name__"):
                 name = callable.__name__
             else:
-                action_indices_str = "_".join(
-                    str(idx) for idx in self.action_indices
-                )
+                action_indices_str = "_".join(str(idx) for idx in self.action_indices)
                 name = f"data_group_{action_indices_str}"
 
         # Ensure measuring callable matches the current action_indices
@@ -532,10 +670,7 @@ class Measurement:
         # has loop indices corresponding to the current ones.
         msmt = Measurement.running_measurement
         data_group = msmt.data_groups.get(action_indices)
-        if getattr(data_group, "loop_indices", None) == self.loop_indices:
-            # Measurement has already been performed by a nested measurement
-            return results
-        else:
+        if getattr(data_group, "loop_indices", None) != self.loop_indices:
             # No nested measurement has been performed in the callable.
             # Add results, which should be dict, by creating a nested measurement
             if not isinstance(results, dict):
@@ -547,31 +682,61 @@ class Measurement:
 
         return results
 
-    def _measure_value(self, value, name):
-        if name is None:
-            raise RuntimeError('Must provide a name when measuring a value')
+    def _measure_dict(self, value: dict, name: str):
+        """Store dictionary results
+
+        Each key is an array name, and the value is the value to store
+        """
+        if not isinstance(value, dict):
+            raise SyntaxError(f"{name} must be a dict, not {value}")
+
+        if not isinstance(name, str) or name == "":
+            raise SyntaxError(f"Dict result {name} must have a valid name: {value}")
 
         # Ensure measuring callable matches the current action_indices
         self._verify_action(action=None, name=name, add_if_new=True)
+
+        with Measurement(name) as msmt:
+            for key, val in value.items():
+                msmt.measure(val, name=key)
+
+        return value
+
+    def _measure_value(self, value, name, label=None, unit=None):
+        """Store a single value (float/int/bool)"""
+        if name is None:
+            raise RuntimeError("Must provide a name when measuring a value")
+
+        # Ensure measuring callable matches the current action_indices
+        self._verify_action(action=None, name=name, add_if_new=True)
+
+        if isinstance(value, np.integer):
+            value = int(value)
+        elif isinstance(value, np.floating):
+            value = float(value)
+        elif isinstance(value, np.bool_):
+            value = bool(value)
 
         result = value
         self._add_measurement_result(
             action_indices=self.action_indices,
             result=result,
             name=name,
-            # label=label,
-            # unit=unit,
+            label=label,
+            unit=unit,
         )
         return result
-        # TODO uncomment label, unit
 
     def measure(
         self,
-        measurable: Union[Parameter, Callable, float, int, bool, np.ndarray],
+        measurable: Union[
+            Parameter, Callable, dict, float, int, bool, np.ndarray, type(None)
+        ],
         name=None,
+        *,  # Everything after here must be a kwarg
         label=None,
         unit=None,
-            **kwargs
+        **kwargs,
     ):
         """Perform a single measurement of a Parameter, function, etc.
 
@@ -594,7 +759,6 @@ class Measurement:
         Returns:
             Return value of measurable
         """
-        # TODO add label, unit, etc. as kwargs
         if not self.is_context_manager:
             raise RuntimeError(
                 "Must use the Measurement as a context manager, "
@@ -612,7 +776,9 @@ class Measurement:
             # Since this Measurement is not the running measurement, it is a
             # DataGroup in the running measurement. Delegate measurement to the
             # running measurement
-            return Measurement.running_measurement.measure(measurable, name=name)
+            return Measurement.running_measurement.measure(
+                measurable, name=name, label=label, unit=unit, **kwargs
+            )
 
         # Code from hereon is only reached by the primary measurement,
         # i.e. the running_measurement
@@ -621,27 +787,39 @@ class Measurement:
         while self.is_paused:
             sleep(0.1)
 
+        t0 = perf_counter()
+        initial_action_indices = self.action_indices
+
         # TODO Incorporate kwargs name, label, and unit, into each of these
         if isinstance(measurable, Parameter):
-            result = self._measure_parameter(measurable, name=name, **kwargs)
+            result = self._measure_parameter(
+                measurable, name=name, label=label, unit=unit, **kwargs
+            )
+            self.skip()  # Increment last action index by 1
         elif isinstance(measurable, MultiParameter):
             result = self._measure_multi_parameter(measurable, name=name, **kwargs)
         elif callable(measurable):
             result = self._measure_callable(measurable, name=name, **kwargs)
-        elif isinstance(measurable, (float, int, bool, np.ndarray)):
-            result = self._measure_value(measurable, name=name)
+        elif isinstance(measurable, dict):
+            result = self._measure_dict(measurable, name=name)
+        elif isinstance(measurable, RAW_VALUE_TYPES):
+            result = self._measure_value(measurable, name=name, label=label, unit=unit)
+            self.skip()  # Increment last action index by 1
         else:
             raise RuntimeError(
                 f"Cannot measure {measurable} as it cannot be called, and it "
-                f"is not an int, float, bool, or numpy array."
+                f"is not a dict, int, float, bool, or numpy array."
             )
 
-        # Increment last action index by 1
-        self.skip()
+        self.timings.record(
+            ['measurement', initial_action_indices, 'total'],
+            perf_counter() - t0
+        )
 
         return result
 
-    def mask_attr(self, obj: object, attr: str, value):
+    # Methods related to masking of parameters/attributes/keys
+    def _mask_attr(self, obj: object, attr: str, value):
         """Temporarily override an object attribute during the measurement.
 
         The value will be reset at the end of the measurement
@@ -658,11 +836,19 @@ class Measurement:
         original_value = getattr(obj, attr)
         setattr(obj, attr, value)
 
-        self.final_actions.append(partial(setattr, obj, attr, original_value))
+        self._masked_properties.append(
+            {
+                "type": "attr",
+                "obj": obj,
+                "attr": attr,
+                "original_value": original_value,
+                "value": value,
+            }
+        )
 
         return original_value
 
-    def mask_parameter(self, param, value):
+    def _mask_parameter(self, param, value):
         """Temporarily override a parameter value during the measurement.
 
         The value will be reset at the end of the measurement.
@@ -678,39 +864,225 @@ class Measurement:
         original_value = param()
         param(value)
 
-        self.final_actions.append(partial(param, original_value))
+        self._masked_properties.append(
+            {
+                "type": "parameter",
+                "obj": param,
+                "original_value": original_value,
+                "value": value,
+            }
+        )
 
         return original_value
 
+    def _mask_key(self, obj: dict, key: str, value):
+        """Temporarily override a dictionary key during the measurement.
+
+        The value will be reset at the end of the measurement
+        This can also be a nested measurement.
+
+        Args:
+            obj: dictionary whose value should be masked
+            key: key to be masked
+            val: Masked value
+
+        Returns:
+            original value
+        """
+        original_value = obj[key]
+        obj[key] = value
+
+        self._masked_properties.append(
+            {
+                "type": "key",
+                "obj": obj,
+                "key": key,
+                "original_value": original_value,
+                "value": value,
+            }
+        )
+
+        return original_value
+
+    def mask(self, obj: Union[object, dict], val=None, **kwargs):
+        """Mask a key/attribute/parameter for the duration of the Measurement
+
+        Multiple properties can be masked by passing as kwargs.
+        Masked properties are reverted at the end of the measurement, even if
+        the measurement crashes
+
+        Args:
+            obj: Object from which to mask property.
+                For a dict, an item is masked.
+                For a ParameterNode, a parameter is masked.
+                For a parameter, the value is masked.
+                For all other objects, an attribute is masked.
+            val: Masked value, only relevant if obj is a parameter
+            **kwargs: Masked properties
+
+        Returns:
+            List of original values before masking
+
+        Examples:
+            ```
+            node = ParameterNode()
+            node.p1 = Parameter(initial_value=1, set_cmd=None)
+
+            with Measurement('test_masking') as msmt:
+                msmt.mask(node, p1=2)
+                print(f"node.p1 has value {node.p1}")
+            >>> node.p1 has value 2
+            print(f"node.p1 has value {node.p1}")
+            >>> node.p1 has value 1
+            ```
+        """
+        if isinstance(obj, ParameterNode):
+            assert val is None
+            # kwargs can be either parameters or attrs
+            return [
+                self._mask_parameter(obj.parameters[key], val)
+                if key in obj.parameters
+                else self._mask_attr(obj, key, val)
+                for key, val in kwargs.items()
+            ]
+        if isinstance(obj, Parameter) and not kwargs:
+            # if kwargs are passed, they are to be treated as attrs
+            return self._mask_parameter(obj, val)
+        elif isinstance(obj, dict):
+            if not kwargs:
+                raise SyntaxError("Must pass kwargs when masking a dict")
+            return [self._mask_key(obj, key, val) for key, val in kwargs.items()]
+        else:
+            if not kwargs:
+                raise SyntaxError("Must pass kwargs when masking")
+            return [self._mask_attr(obj, key, val) for key, val in kwargs.items()]
+
+    def unmask(
+        self,
+        obj,
+        attr=None,
+        key=None,
+        type=None,
+        value=None,
+        raise_exception=True,
+        **kwargs  # Add kwargs because original_value may be None
+    ):
+        if 'original_value' not in kwargs:
+            # No masked property passed. We collect all the masked properties
+            # that satisfy these requirements and unmask each of them.
+            unmask_properties = []
+            remaining_masked_properties = []
+            for masked_property in self._masked_properties:
+                if masked_property["obj"] != obj:
+                    remaining_masked_properties.append(masked_property)
+                elif attr is not None and masked_property.get("attr") != attr:
+                    remaining_masked_properties.append(masked_property)
+                elif key is not None and masked_property.get("key") != key:
+                    remaining_masked_properties.append(masked_property)
+                else:
+                    unmask_properties.append(masked_property)
+
+            for unmask_property in reversed(unmask_properties):
+                self.unmask(**unmask_property)
+
+            self._masked_properties = remaining_masked_properties
+        else:
+            # A masked property has been passed, which we unmask here
+            try:
+                original_value = kwargs['original_value']
+                if type == "key":
+                    obj[key] = original_value
+                elif type == "attr":
+                    setattr(obj, attr, original_value)
+                elif type == "parameter":
+                    obj(original_value)
+                else:
+                    raise SyntaxError(f"Unmask type {type} not understood")
+            except Exception as e:
+                self.log(
+                    f"Could not unmask {obj} {type} from masked value {value} "
+                    f"to original value {original_value}\n"
+                    f"{traceback.format_exc()}",
+                    level="error",
+                )
+
+                if raise_exception:
+                    raise e
+
+    def unmask_all(self):
+        """Unmask all masked properties"""
+        masked_properties = reversed(self._masked_properties)
+        for masked_property in masked_properties:
+            self.unmask(**masked_property, raise_exception=False)
+        self._masked_properties.clear()
 
     # Functions relating to measurement flow
     def pause(self):
         """Pause measurement at start of next parameter sweep/measurement"""
-        self.is_paused = True
+        running_measurement().is_paused = True
 
     def resume(self):
         """Resume measurement after being paused"""
-        self.is_paused = False
+        running_measurement().is_paused = False
 
     def stop(self):
-        self.is_stopped = True
+        """Stop measurement at start of next parameter sweep/measurement"""
+        running_measurement().is_stopped = True
         # Unpause loop
-        self.resume()
+        running_measurement().resume()
 
     def skip(self, N=1):
-        action_indices = list(self.action_indices)
-        action_indices[-1] += N
-        self.action_indices = tuple(action_indices)
-        return self.action_indices
+        """Skip an action index.
+
+        Useful if a measure is only sometimes run
+
+        Args:
+            N: number of action indices to skip
+
+        Examples:
+            This measurement repeatedly creates a random value.
+            It then stores the value twice, but the first time the value is
+            only stored if it is above a threshold. Notice that if the random
+            value is not above this threshold, the second measurement would
+            become the first measurement if msmt.skip is not called
+            ```
+            with Measurement('skip_measurement') as msmt:
+                for k in Sweep(range(10)):
+                    random_value = np.random.rand()
+                    if random_value > 0.7:
+                        msmt.measure(random_value, 'random_value_conditional')
+                    else:
+                        msmt.skip()
+
+                    msmt.measure(random_value, 'random_value_unconditional)
+            ```
+        """
+        if running_measurement() is not self:
+            return running_measurement().skip(N=N)
+        else:
+            action_indices = list(self.action_indices)
+            action_indices[-1] += N
+            self.action_indices = tuple(action_indices)
+            return self.action_indices
 
     def revert(self, N=1):
-        action_indices = list(self.action_indices)
-        action_indices[-1] -= N
-        self.action_indices = tuple(action_indices)
-        return self.action_indices
+        """Revert action indices
 
+        Useful if you want to redo a measurement.
+        """
+        if running_measurement() is not self:
+            return running_measurement().revert(N=N)
+        else:
+            action_indices = list(self.action_indices)
+            action_indices[-1] -= N
+            self.action_indices = tuple(action_indices)
+            return self.action_indices
 
     def step_out(self, reduce_dimension=True):
+        """Step out of a Sweep
+
+        This function usually doesn't need to be called.
+        """
         if Measurement.running_measurement is not self:
             Measurement.running_measurement.step_out(reduce_dimension=reduce_dimension)
         else:
@@ -723,15 +1095,49 @@ class Measurement:
             action_indices[-1] += 1
             self.action_indices = tuple(action_indices)
 
+    def traceback(self):
+        """Print traceback if an error occurred.
+
+         Measurement must be ran from separate thread
+        """
+        if self.measurement_thread is None:
+            raise RuntimeError('Measurement was not started in separate thread')
+        else:
+            self.measurement_thread.traceback()
 
 def running_measurement() -> Measurement:
+    """Return the running measurement"""
     return Measurement.running_measurement
 
 
 class Sweep:
-    def __init__(self, sequence, name=None, unit=None):
+    """Sweep over an iterable inside a Measurement
+
+    Args:
+        sequence: Sequence to iterate over.
+            Can be an iterable, or a parameter Sweep.
+            If the sequence
+        name: Name of sweep. Not needed if a Parameter is passed
+        unit: unit of sweep. Not needed if a Parameter is passed
+        reverse: Sweep over sequence in opposite order.
+            The data is also stored in reverse.
+
+    Examples:
+        ```
+        with Measurement('sweep_msmt') as msmt:
+            for value in Sweep(np.linspace(5), 'sweep_values'):
+                msmt.measure(value, 'linearly_increasing_value')
+
+            p = Parameter('my_parameter')
+            for param_val in Sweep(p.
+        ```
+    """
+    def __init__(self, sequence, name=None, unit=None, reverse=False):
         if running_measurement() is None:
             raise RuntimeError("Cannot create a sweep outside a Measurement")
+
+        if not isinstance(sequence, Iterable):
+            raise SyntaxError("Sweep sequence must be iterable")
 
         # Properties for the data array
         self.name = name
@@ -741,6 +1147,7 @@ class Sweep:
         self.dimension = len(running_measurement().loop_shape)
         self.loop_index = None
         self.iterator = None
+        self.reverse = reverse
 
         msmt = running_measurement()
         if msmt.action_indices in msmt.set_arrays:
@@ -755,14 +1162,17 @@ class Sweep:
                 "is already running in a different thread."
             )
 
+        if self.reverse:
+            self.loop_index = len(self.sequence) - 1
+            self.iterator = iter(self.sequence[::-1])
+        else:
+            self.loop_index = 0
+            self.iterator = iter(self.sequence)
+
         running_measurement().loop_shape += (len(self.sequence),)
-        running_measurement().loop_indices += (0,)
+        running_measurement().loop_indices += (self.loop_index,)
         running_measurement().action_indices += (0,)
 
-        # Create a set array if necessary
-
-        self.loop_index = 0
-        self.iterator = iter(self.sequence)
 
         return self
 
@@ -793,17 +1203,21 @@ class Sweep:
             action_indices[-1] = 0
             msmt.action_indices = tuple(action_indices)
         except StopIteration:  # Reached end of iteration
-            msmt.step_out(reduce_dimension=True)
-            raise StopIteration
+            self.exit_sweep()
 
         if isinstance(self.sequence, SweepValues):
             self.sequence.set(sweep_value)
 
         self.set_array[msmt.loop_indices] = sweep_value
 
-        self.loop_index += 1
+        self.loop_index += 1 if not self.reverse else -1
 
         return sweep_value
+
+    def exit_sweep(self):
+        msmt = running_measurement()
+        msmt.step_out(reduce_dimension=True)
+        raise StopIteration
 
     def create_set_array(self):
         if isinstance(self.sequence, SweepValues):
