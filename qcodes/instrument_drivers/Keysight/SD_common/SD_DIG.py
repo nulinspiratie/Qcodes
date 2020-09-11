@@ -392,7 +392,6 @@ class SD_DIG(SD_Module):
             channel = DigitizerChannel(self, name=f'ch{ch}', id=ch, zero_based=self.zero_based_channels)
             setattr(self, f'ch{ch}', channel)
             channels.append(channel)
-        self.add_submodule('channels', channels)
 
         self.add_submodule('channels', channels)
 

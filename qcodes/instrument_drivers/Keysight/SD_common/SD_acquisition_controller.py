@@ -243,6 +243,8 @@ class Triggered_Controller(AcquisitionController):
         else:  # Analog channel
             self.active_channels.trigger_mode('analog')
             trigger_id = int(trigger_channel[-1])
+            if not self.digitizer.zero_based_channels:
+                trigger_id -= 1
             self.active_channels.analog_trigger_mask(1 << trigger_id)
             # Explicitly save val to ensure trigger_edge and threshold work.
             self.trigger_channel._save_val(trigger_channel)

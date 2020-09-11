@@ -400,6 +400,7 @@ class SD_AWG(SD_Module):
         if channel_idxs is None:
             channel_idxs = model_channel_idxs[self.model]
         self.channel_idxs = channel_idxs
+        self.zero_based_channels = channel_idxs[0] == 0
 
         # Create instance of keysight SD_AOU class
         self.awg = logclass(keysightSD1.SD_AOU)()
@@ -645,7 +646,7 @@ class SD_AWG(SD_Module):
             channels: List of channels to start
         """
         # AWG channel mask, where LSB is for ch0, bit 1 is for ch1 etc.
-        channel_mask = sum(2**channel for channel in channels)
+        channel_mask = sum(2**(channel-1) for channel in channels)
         self.awg.AWGstartMultiple(channel_mask)
 
     def pause_channels(self, channels: List[int]):
@@ -657,7 +658,7 @@ class SD_AWG(SD_Module):
             channels: List of channels to pause
         """
         # AWG channel mask, where LSB is for ch0, bit 1 is for ch1 etc.
-        channel_mask = sum(2**channel for channel in channels)
+        channel_mask = sum(2**(channel-1) for channel in channels)
         self.awg.AWGpauseMultiple(channel_mask)
 
     def resume_channels(self, channels: List[int]):
@@ -668,7 +669,7 @@ class SD_AWG(SD_Module):
             channels: List of channels to resume
         """
         # AWG channel mask, where LSB is for ch0, bit 1 is for ch1 etc.
-        channel_mask = sum(2**channel for channel in channels)
+        channel_mask = sum(2**(channel-1) for channel in channels)
         self.awg.AWGresumeMultiple(channel_mask)
 
     def stop_channels(self, channels: List[int]):
@@ -681,7 +682,7 @@ class SD_AWG(SD_Module):
             channels: List of channels to stop
         """
         # AWG channel mask, where LSB is for ch0, bit 1 is for ch1 etc.
-        channel_mask = sum(2**channel for channel in channels)
+        channel_mask = sum(2**(channel-1) for channel in channels)
         self.awg.AWGstopMultiple(channel_mask)
 
     def trigger_channels(self, channels: List[int]):
@@ -694,7 +695,7 @@ class SD_AWG(SD_Module):
             channels: List of chnanels to trigger
         """
         # AWG channel mask, where LSB is for ch0, bit 1 is for ch1 etc.
-        channel_mask = sum(2**channel for channel in channels)
+        channel_mask = sum(2**(channel-1) for channel in channels)
         self.awg.AWGtriggerMultiple(channel_mask)
 
     # Functions related to creation of SD_Wave objects
