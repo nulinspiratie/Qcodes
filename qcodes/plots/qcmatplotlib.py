@@ -4,11 +4,13 @@ using the nbagg backend and matplotlib
 """
 from collections import Mapping, Iterable, Sequence
 import pyperclip
+import warnings
 import os
 from functools import partial
 import logging
 
 import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize, LogNorm
 from matplotlib import ticker
 import numpy as np
 from matplotlib.transforms import Bbox
@@ -36,10 +38,61 @@ def align_x_axis(ax, ax_target):
     posn_old, posn_target = ax.get_position(), ax_target.get_position()
     ax.set_position([posn_target.x0, posn_old.y0, posn_target.width, posn_old.height])
 
+
 def align_y_axis(ax, ax_target):
     """Make y-axis of `ax` aligned with `ax_target` in figure"""
     posn_old, posn_target = ax.get_position(), ax_target.get_position()
     ax.set_position([posn_old.x0, posn_target.y0, posn_old.width, posn_target.height])
+
+
+def set_zscale(self, scale: str):
+    """Set the qcodes_colorbar scaling
+
+    Note: This function does not behave the same as set_xscale or set_yscale,
+          for example it is currently not possible to set the base of a log
+          scaled plot.
+
+    :param scale: str Either "linear" or "log"
+    :return: None
+
+    :raises: AttributeError, ValueError
+    """
+    if not hasattr(self, 'qcodes_colorbar'):
+        raise AttributeError("Axes object does not have a colorbar.")
+    data_arrays = [data_array.get_array() for data_array in self.collections
+                   if data_array.get_array() is not None]
+    clim = [
+        np.nanmin([np.nanmin(data_array) for data_array in data_arrays]),
+        np.nanmax([np.nanmax(data_array) for data_array in data_arrays])]
+    if scale == 'log':
+        if np.nanmin(clim) < 0:
+            warnings.warn("Plotted data contains negative values, logarithmic "
+                          "scaling is not recommended.")
+            clim[0] = np.nanmin(
+                [np.nanmin(abs(data_array)) for data_array in data_arrays])
+        norm = LogNorm(*clim)
+        for mesh in self.collections:
+            mesh.set_norm(norm)
+    elif scale == 'linear':
+        for mesh in self.collections:
+            mesh.set_norm(Normalize(*clim))
+    else:
+        raise ValueError(f"Scale '{scale}' not valid.")
+
+
+def get_zscale(self):
+    """Get the qcodes_colorbar scaling
+
+    :return: str "linear" or "log"
+
+    :raises: AttributeError
+    """
+    if not hasattr(self, 'qcodes_colorbar'):
+        raise AttributeError("Axes object does not have a colorbar.")
+    if isinstance(self.qcodes_colorbar.formatter, ticker.LogFormatter):
+        return "log"
+    else:
+        return "linear"
 
 
 class MatPlot(BasePlot):
@@ -75,7 +128,7 @@ class MatPlot(BasePlot):
 
     def __init__(self, *args, figsize=None, interval=1, subplots=None, num=None,
                  colorbar=True, sharex=False, sharey=False, gridspec_kw=None,
-                 actions = [], **kwargs):
+                 actions=[], **kwargs):
         super().__init__(interval)
 
         if subplots is None:
@@ -137,10 +190,11 @@ class MatPlot(BasePlot):
             # Format subplots as tuple (nrows, ncols)
             if isinstance(subplots, int):
                 if subplots == 4:
-                    subplots = (2,2)
+                    subplots = (2, 2)
                 else:
                     # self.max_subplot_columns defines the limit on how many
-                    # subplots can be in one row. Adjust subplot rows and columns
+                    # subplots can be in one row. Adjust subplot rows and
+                    # columns
                     #  accordingly
                     nrows = int(np.ceil(subplots / self.max_subplot_columns))
                     ncols = min(subplots, self.max_subplot_columns)
@@ -167,7 +221,7 @@ class MatPlot(BasePlot):
             # Include `add` method to subplots, making it easier to add data to
             # subplots. Note that subplot kwarg is 1-based, to adhere to
             # Matplotlib standards
-            subplot.add = partial(self.add, subplot=k+1)
+            subplot.add = partial(self.add, subplot=k + 1)
             subplot.align_x_axis = partial(align_x_axis, subplot)
             subplot.align_y_axis = partial(align_y_axis, subplot)
 
@@ -208,6 +262,9 @@ class MatPlot(BasePlot):
         ax = self[kwargs.get('subplot', 1) - 1]
         if 'z' in kwargs:
             plot_object = self._draw_pcolormesh(ax, colorbar=colorbar, **kwargs)
+            ax.set_zscale = partial(set_zscale, ax)
+            ax.get_zscale = partial(get_zscale, ax)
+
         else:
             plot_object = self._draw_plot(ax, **kwargs)
 
@@ -234,21 +291,21 @@ class MatPlot(BasePlot):
 
     def _update_labels(self, ax, config):
         for axletter in ("x", "y"):
-            if axletter+'label' in config:
-                label = config[axletter+'label']
+            if axletter + 'label' in config:
+                label = config[axletter + 'label']
             else:
                 label = None
 
             # find if any kwarg from plot.add in the base class
             # matches xunit or yunit, signaling a custom unit
-            if axletter+'unit' in config:
-                unit = config[axletter+'unit']
+            if axletter + 'unit' in config:
+                unit = config[axletter + 'unit']
             else:
                 unit = None
 
             #  find ( more hope to) unit and label from
             # the data array inside the config
-            getter = getattr(ax, "get_{}label".format(axletter))
+            getter = getattr(ax, f"get_{axletter}label")
             if axletter in config and not getter():
                 # now if we did not have any kwarg for label or unit
                 # fallback to the data_array
@@ -263,9 +320,9 @@ class MatPlot(BasePlot):
                 # labels/names as these will in general not be consistent on
                 # at least one axis
                 return
-            axsetter = getattr(ax, "set_{}label".format(axletter))
+            axsetter = getattr(ax, f"set_{axletter}label")
             if unit:
-                axsetter("{} ({})".format(label, unit))
+                axsetter(f"{label} ({unit})")
             else:
                 axsetter(str(label))
 
@@ -281,7 +338,7 @@ class MatPlot(BasePlot):
               for given subplot shape
         """
         if not isinstance(subplots, tuple):
-            raise TypeError('Subplots {} must be a tuple'.format(subplots))
+            raise TypeError(f'Subplots {subplots} must be a tuple')
         return (min(3 + 3 * subplots[1], 12), 1 + 3 * subplots[0])
 
     def update_plot(self):
@@ -331,6 +388,7 @@ class MatPlot(BasePlot):
                         ax.dataLim = bbox
                 ax.autoscale()
 
+        self.rescale_axis()
         # Set internal flag to ensure that the full figure is redrawn.
         # If unset, calling canvas.draw from a separate thread may not draw
         # all components
@@ -351,7 +409,7 @@ class MatPlot(BasePlot):
         if 'label' not in kwargs and isinstance(y, DataArray):
             kwargs['label'] = y.label
 
-        for lineplot_kwarg in ['clim', 'cmap']:
+        for lineplot_kwarg in ['clim', 'cmap', 'norm']:
             kwargs.pop(lineplot_kwarg, None)
 
         # NOTE(alexj)stripping out subplot because which subplot we're in is
@@ -388,12 +446,13 @@ class MatPlot(BasePlot):
         if 'label' not in kwargs and isinstance(z, DataArray):
             kwargs['label'] = z.label
 
-        # NOTE(alexj)stripping out subplot because which subplot we're in is already
+        # NOTE(alexj)stripping out subplot because which subplot we're in is
+        # already
         # described by ax, and it's not a kwarg to matplotlib's ax.plot. But I
         # didn't want to strip it out of kwargs earlier because it should stay
         # part of trace['config'].
         args_masked = [masked_invalid(arg) for arg in [x, y, z]
-                      if arg is not None]
+                       if arg is not None]
 
         if np.any([np.all(getmask(arg)) for arg in args_masked]):
             # if the z array is masked, don't draw at all
@@ -412,7 +471,7 @@ class MatPlot(BasePlot):
                 # If a two-dimensional array is provided, only consider the
                 # first row/column, depending on the axis
                 if arr.ndim > 1:
-                    arr = arr[0] if k == 0 else arr[:,0]
+                    arr = arr[0] if k == 0 else arr[:, 0]
 
                 if np.ma.is_masked(arr[1]):
                     # Only the first element is not nan, in this case pad with
@@ -460,10 +519,14 @@ class MatPlot(BasePlot):
         data_arrays = [data_array.get_array() for data_array in ax.collections
                        if data_array.get_array() is not None]
         if clim is None:
-            # Get color limits as min/max of all existing plotted 2D arrays
-            # Note that any line plots will show up as None, and so we filter it out
-            clim = [np.min([np.nanmin(data_array) for data_array in data_arrays]),
-                    np.max([np.nanmax(data_array) for data_array in data_arrays])]
+            # If norm is provided, get clim from there
+            if 'norm' in kwargs:
+                norm = kwargs.get('norm')
+                clim = [norm.vmin, norm.vmax]
+            else:
+                # Get color limits as min/max of all existing plotted 2D arrays
+                clim = [np.nanmin([np.nanmin(data_array) for data_array in data_arrays]),
+                        np.nanmax([np.nanmax(data_array) for data_array in data_arrays])]
 
         # Update color limits for all plotted 2D arrays
         for mesh in ax.collections:
@@ -508,13 +571,13 @@ class MatPlot(BasePlot):
         if os.path.splitext(filename)[1]:
             # Filename already has extension
             filename, ext = os.path.splitext(filename)
-            ext = ext[1:] # Remove initial `.`
+            ext = ext[1:]  # Remove initial `.`
 
         if isinstance(ext, str):
             ext = [ext]
 
         for ext_instance in ext:
-            self.fig.savefig('{}.{}'.format(filename, ext_instance))
+            self.fig.savefig(f'{filename}.{ext_instance}')
 
     def tight_layout(self):
         """
@@ -530,17 +593,26 @@ class MatPlot(BasePlot):
         This scales units defined in BasePlot.standardunits only
         to avoid prefixes on combined or non standard units
         """
+
         def scale_formatter(i, pos, scale):
-            return "{0:.7g}".format(i * scale)
+            return f"{i * scale:.7g}"
 
         for i, subplot in enumerate(self.subplots):
-            traces = [trace for trace in self.traces if trace['config'].get('subplot', None) == i+1]
+            traces = [trace for trace in self.traces if
+                      trace['config'].get('subplot', None) == i + 1]
             if not traces:
                 continue
             else:
                 # TODO: include all traces when calculating maxval etc.
                 trace = traces[0]
             for axis in 'x', 'y', 'z':
+                try:
+                    axis_scale = getattr(subplot, f"get_{axis}scale")()
+                except AttributeError:
+                    axis_scale = None
+
+                log_scale = axis_scale == 'log'
+
                 if axis in trace['config'] and isinstance(trace['config'][axis], DataArray):
                     unit = trace['config'][axis].unit
                     label = trace['config'][axis].label
@@ -550,33 +622,41 @@ class MatPlot(BasePlot):
                     # allow values up to a <1000. i.e. nV is used up to 1000 nV
                     prefixes = ['a', 'f', 'p', 'n', 'μ', 'm', '', 'k', 'M',
                                 'G', 'T', 'P', 'E']
-                    thresholds = [10**(-3*5 + 3*n) for n in range(len(prefixes))]
-                    scales = [10**(3*6 - 3*n) for n in range(len(prefixes))]
+                    thresholds = [10 ** (-3 * 5 + 3 * n) for n in
+                                  range(len(prefixes))]
+                    scales = [10 ** (3 * 6 - 3 * n) for n in
+                              range(len(prefixes))]
 
                     if unit in units_to_scale:
+                        if unit == 'Ohm':
+                            unit = 'Ω'
+
                         scale = 1
                         new_unit = unit
-                        for prefix, threshold, trialscale in zip(prefixes,
-                                                                 thresholds,
-                                                                 scales):
-                            if maxval < threshold:
-                                scale = trialscale
-                                new_unit = prefix + unit
-                                break
-                        # special case the largest
-                        if maxval > thresholds[-1]:
-                            scale = scales[-1]
-                            new_unit = prefixes[-1] + unit
+                        # Don't scale the units for a log-plot
+                        if not log_scale:
+                            for prefix, threshold, trialscale in zip(prefixes,
+                                                                     thresholds,
+                                                                     scales):
+                                if maxval < threshold:
+                                    scale = trialscale
+                                    new_unit = prefix + unit
+                                    break
 
-                        tx = ticker.FuncFormatter(
-                            partial(scale_formatter, scale=scale))
-                        new_label = "{} ({})".format(label, new_unit)
+                            # special case the largest
+                            if maxval > thresholds[-1]:
+                                scale = scales[-1]
+                                new_unit = prefixes[-1] + unit
+
+                        if log_scale:
+                            tx = ticker.LogFormatterMathtext()
+                        else:
+                            tx = ticker.FuncFormatter(
+                                partial(scale_formatter, scale=scale))
+                        new_label = f"{label} ({new_unit})"
                         if axis in ('x', 'y'):
-                            getattr(subplot,
-                                    "{}axis".format(axis)).set_major_formatter(
-                                tx)
-                            getattr(subplot, "set_{}label".format(axis))(
-                                new_label)
+                            getattr(subplot, f"{axis}axis").set_major_formatter(tx)
+                            getattr(subplot, f"set_{axis}label")(new_label)
                         elif hasattr(subplot, 'qcodes_colorbar'):
                             subplot.qcodes_colorbar.formatter = tx
                             subplot.qcodes_colorbar.set_label(new_label)
@@ -584,6 +664,7 @@ class MatPlot(BasePlot):
 
     # Allow actions to be attached
     available_actions = {}
+
     def connect(self, action_name):
         action = self.available_actions[action_name]()
         action.connect(self)
