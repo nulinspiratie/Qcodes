@@ -178,6 +178,10 @@ class Measurement:
                 # a data_group of the primary measurement
                 msmt = Measurement.running_measurement
                 msmt.data_groups[msmt.action_indices] = self
+                data_groups = [
+                    (key, getattr(val, 'name', 'None')) for key, val in msmt.data_groups.items()
+                ]
+                msmt.dataset.add_metadata({'data_groups': data_groups})
                 msmt.action_indices += (0,)
 
                 # Nested measurement attributes should mimic the primary measurement
