@@ -32,11 +32,11 @@ class LoopManagerWidget(DOMWidget):
             self.widgets["layout_button"].observe(self._handle_layout_button_click)
 
 
-            # The layout start/stop button needs to be pressed twice
-            # This variable stores the last time it was pressed
-            self._layout_button_last_pressed = time.perf_counter()
-            # Maximum time difference between successive button presses
-            self._layout_button_double_press_dt_max = 0.4
+        # The layout start/stop button needs to be pressed twice
+        # This variable stores the last time it was pressed
+        self._layout_button_last_pressed = time.perf_counter()
+        # Maximum time difference between successive button presses
+        self._layout_button_double_press_dt_max = 0.4
 
         self.updater = UpdaterThread(self.update_widget, interval=interval)
 
