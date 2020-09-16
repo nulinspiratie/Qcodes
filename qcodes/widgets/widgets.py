@@ -31,7 +31,6 @@ class LoopManagerWidget(DOMWidget):
         if self.layout:
             self.widgets["layout_button"].observe(self._handle_layout_button_click)
 
-
         # The layout start/stop button needs to be pressed twice
         # This variable stores the last time it was pressed
         self._layout_button_last_pressed = time.perf_counter()
