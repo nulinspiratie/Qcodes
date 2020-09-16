@@ -25,9 +25,11 @@ class LoopManagerWidget(DOMWidget):
         self.widgets["force_stop_button"].on_click(self.force_stop_measurement)
 
         self.widgets["notify_checkbox"].observe(self._handle_notify_button_click)
-        self.widgets["layout_button"].observe(self._handle_layout_button_click)
 
         self.dot_counter = 0
+
+        if self.layout:
+            self.widgets["layout_button"].observe(self._handle_layout_button_click)
 
         # The layout start/stop button needs to be pressed twice
         # This variable stores the last time it was pressed
