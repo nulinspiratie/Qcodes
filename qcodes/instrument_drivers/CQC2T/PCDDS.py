@@ -1,8 +1,8 @@
+from typing import List, Union
+
 from qcodes.instrument.base import Instrument
 from qcodes.instrument.channel import InstrumentChannel, ChannelList
 from qcodes.utils.validators import Bool, Ints
-from typing import List
-
 
 import numpy as np
 
@@ -50,10 +50,13 @@ class PCDDSChannel(InstrumentChannel):
         self.n_phase_bits = 45
         self.n_accum_bits = 45
         self.n_amp_bits = 16
+        self.n_timing_bits = 32  # number of bits for pulse to auto-advance
         self.clk = 100e6
         self.v_max = 1.5
         self.f_max = 200e6
         self.fpga_port = 1
+
+        self.pulse_timing_offset = 0  # Offset for auto-advancing of pulses (=13?)
 
         self.add_parameter(
             'output_enable',
@@ -156,7 +159,7 @@ class PCDDSChannel(InstrumentChannel):
         """
         self.write_pulse(pulse=pulse, phase=0, frequency=0,
                          frequency_accumulation=0, amplitude=0, offset=0,
-                         next_pulse=0)
+                         pulse_timing=0, next_pulse=0)
 
     def clear_memory(self):
         """
@@ -187,6 +190,7 @@ class PCDDSChannel(InstrumentChannel):
         """
         if instr['instr'] == 'dc':
             self.write_dc_pulse(pulse=instr['pulse_idx'], voltage=instr['amp'],
+                                duration=instr.get('duration', None),
                                 next_pulse=instr['next_pulse'])
         elif instr['instr'] == 'sine':
             self.write_sine_pulse(pulse=instr['pulse_idx'],
@@ -194,6 +198,7 @@ class PCDDSChannel(InstrumentChannel):
                                   frequency=instr['freq'],
                                   amplitude=instr['amp'],
                                   offset=instr['offset'],
+                                  duration=instr.get('duration', None),
                                   next_pulse=instr['next_pulse'])
         elif instr['instr'] == 'chirp':
             self.write_chirp_pulse(pulse=instr['pulse_idx'],
@@ -202,14 +207,23 @@ class PCDDSChannel(InstrumentChannel):
                                    frequency_accumulation=instr['accum'],
                                    amplitude=instr['amp'],
                                    offset=instr['offset'],
+                                   duration=instr.get('duration', None),
                                    next_pulse=instr['next_pulse'])
         else:
             raise ValueError(f'Unknown instruction type: {instr["instr"]}')
 
         self.instruction_sequence().append(instr)
 
-    def write_sine_pulse(self, pulse: int, phase: float, frequency: float,
-                         amplitude: float, offset: float, next_pulse: int):
+    def write_sine_pulse(
+            self,
+            pulse: int,
+            phase: float,
+            frequency: float,
+            amplitude: float,
+            offset: float,
+            next_pulse: int,
+            duration: int = None
+    ):
         """
         Write a normal sinusoidal pulse with the desired properties to the
         pulse memory.
@@ -237,10 +251,12 @@ class PCDDSChannel(InstrumentChannel):
         accum_val = 0
         amplitude_val = self.amp2val(amplitude)
         offset_val = self.offset2val(offset)
-        self.write_pulse(pulse, phase_val, freq_val, accum_val,
-                         amplitude_val, offset_val, next_pulse)
+        pulse_timing = self.duration2val(duration)
 
-    def write_dc_pulse(self, pulse: int, voltage: float, next_pulse: int):
+        self.write_pulse(pulse, phase_val, freq_val, accum_val,
+                         amplitude_val, offset_val, pulse_timing, next_pulse)
+
+    def write_dc_pulse(self, pulse: int, voltage: float, next_pulse: int, duration: float = None):
         """
         Write a DC pulse to memory. This sets up a pulse with a phase offset
         of 90 or 270 degrees, 0 frequency and a certain amplitude
@@ -263,12 +279,14 @@ class PCDDSChannel(InstrumentChannel):
         phase_val = 0
         accum_val = 0
         freq_val = 0
+        pulse_timing = self.duration2val(duration)
+
         self.write_pulse(pulse, phase_val, freq_val, accum_val,
-                         amplitude_val, offset_val, next_pulse)
+                         amplitude_val, offset_val, pulse_timing, next_pulse)
 
     def write_chirp_pulse(self, pulse: int, phase: float, frequency: float,
                           frequency_accumulation: float, amplitude: float,
-                          offset: float, next_pulse: int):
+                          offset: float, next_pulse: int, duration: float = None):
         """
         Write a pulse to pulse memory which contains a frequency sweep
         Args:
@@ -295,12 +313,14 @@ class PCDDSChannel(InstrumentChannel):
         accum_val = self.accum2val(frequency_accumulation)
         amplitude_val = self.amp2val(amplitude)
         offset_val = self.offset2val(offset)
+        pulse_timing = self.duration2val(duration)
+
         self.write_pulse(pulse, phase_val, freq_val, accum_val,
-                         amplitude_val, offset_val, next_pulse)
+                         amplitude_val, offset_val, pulse_timing, next_pulse)
 
     def write_pulse(self, pulse: int, phase: int, frequency: int,
                     frequency_accumulation: int, amplitude: int, offset: int,
-                    next_pulse: int):
+                    pulse_timing: int, next_pulse: int):
         """
         Function to write a pulse with given register values to a given
         location in pulse memory
@@ -325,18 +345,25 @@ class PCDDSChannel(InstrumentChannel):
         # Construct the initial instruction to write a new pulse to memory
         operation = int('0000100000', 2)
         instr = self.construct_instruction(operation, pulse)
+        print(pulse_timing)
         # Construct the pulse parameter to be written to memory
+
         pulse_data = phase
         pulse_data += (frequency << self.n_phase_bits)
         pulse_data += (frequency_accumulation << 2 * self.n_phase_bits)
         pulse_data += (amplitude << (2 * self.n_phase_bits + self.n_accum_bits))
         pulse_data += (offset << (2 * self.n_phase_bits + self.n_accum_bits
                        + self.n_amp_bits))
+        pulse_data += pulse_timing << (2 * self.n_phase_bits + self.n_accum_bits
+                       + 2*self.n_amp_bits)
         pulse_data += (next_pulse << (2 * self.n_phase_bits + self.n_accum_bits
-                       + 2*self.n_amp_bits))
+                       + 2*self.n_amp_bits + self.n_timing_bits))
         pulse_data = self.split_value(pulse_data)
+
         self.fpga.set_fpga_pc_port(self.fpga_port, [instr], self.id, 0, 1)
         # self.fpga.set_fpga_pc_port(self.fpga_port, pulse_data, self.id, 0, 1)
+        self.fpga.set_fpga_pc_port(self.fpga_port, [pulse_data[6]],
+                                   self.id, 0, 1)
         self.fpga.set_fpga_pc_port(self.fpga_port, [pulse_data[5]],
                                    self.id, 0, 1)
         self.fpga.set_fpga_pc_port(self.fpga_port, [pulse_data[4]],
@@ -366,7 +393,8 @@ class PCDDSChannel(InstrumentChannel):
                 int((value >> 2*32) & 0xFFFFFFFF),
                 int((value >> 3*32) & 0xFFFFFFFF),
                 int((value >> 4*32) & 0xFFFFFFFF),
-                int((value >> 5*32) & 0xFFFFFFFF)]
+                int((value >> 5*32) & 0xFFFFFFFF),
+                int((value >> 6*32) & 0xFFFFFFFF)]
 
     def set_next_pulse(self, pulse: int, update: bool):
         """
@@ -481,6 +509,15 @@ class PCDDSChannel(InstrumentChannel):
         value &= 0xFFFF
         return value
 
+    def duration2val(self, duration: Union[float, None]):
+        if duration is None:
+            # Wait for trigger
+            return 0
+        else:
+            cycles = int(self.clk * duration)
+            cycles += self.pulse_timing_offset
+            return cycles
+
 
 class PCDDS(Instrument):
     """
@@ -526,7 +563,7 @@ class PCDDS(Instrument):
                           'delay length ch2',
                           'output enable ch3',
                           'delay length ch3']
-        return {label: PCDDS.fpga.get_fpga_pc_port(port=1,
+        return {label: self.fpga.get_fpga_pc_port(port=1,
                                                    data_size=1,
                                                    address=debug_port + 1,
                                                    address_mode=1,
