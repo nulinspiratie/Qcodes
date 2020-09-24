@@ -515,7 +515,7 @@ class PCDDSChannel(InstrumentChannel):
             return 0
         else:
             cycles = int(self.clk * duration)
-            cycles += self.pulse_timing_offset
+            cycles -= self.pulse_timing_offset
             return cycles
 
 
