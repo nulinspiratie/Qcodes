@@ -1,6 +1,7 @@
 from typing import List, Union
 
 from qcodes.instrument.base import Instrument
+from qcodes.instrument.parameter import Parameter
 from qcodes.instrument.channel import InstrumentChannel, ChannelList
 from qcodes.utils.validators import Bool, Ints
 
@@ -54,9 +55,9 @@ class PCDDSChannel(InstrumentChannel):
         self.clk = 100e6
         self.v_max = 1.5
         self.f_max = 200e6
-        self.fpga_port = 1
+        self.fpga_port = self.id
 
-        self.pulse_timing_offset = 0  # Offset for auto-advancing of pulses (=13?)
+        self.pulse_timing_offset = 14  # Offset for auto-advancing of pulses
 
         self.add_parameter(
             'output_enable',
@@ -90,6 +91,13 @@ class PCDDSChannel(InstrumentChannel):
             initial_value=[],
             docstring='The instruction sequence for all pulses sent to the DDS.'
                       'Gets cleared during clear_memory()'
+        )
+
+
+        self.debug_mode = Parameter(
+            initial_value=False,
+            set_cmd=None,
+            docstring='Print debug messages'
         )
 
         # Initially set load delay to 10 samples
@@ -345,9 +353,20 @@ class PCDDSChannel(InstrumentChannel):
         # Construct the initial instruction to write a new pulse to memory
         operation = int('0000100000', 2)
         instr = self.construct_instruction(operation, pulse)
-        print(pulse_timing)
-        # Construct the pulse parameter to be written to memory
 
+        if self.debug_mode():
+            print(
+                "\nPulse properties:\n"
+                f"phase: {phase}\n"
+                f"frequency: {frequency}\n"
+                f"frequency_accumulation: {frequency_accumulation}\n"
+                f"amplitude: {amplitude}\n"
+                f"offset: {offset}\n"
+                f"pulse_timing: {pulse_timing}\n"
+                f"next_pulse: {next_pulse}"
+            )
+
+        # Construct the pulse parameter to be written to memory
         pulse_data = phase
         pulse_data += (frequency << self.n_phase_bits)
         pulse_data += (frequency_accumulation << 2 * self.n_phase_bits)
@@ -377,8 +396,7 @@ class PCDDSChannel(InstrumentChannel):
         self.fpga.set_fpga_pc_port(self.fpga_port, [pulse_data[0]],
                                    self.id, 0, 1)
 
-    @staticmethod
-    def split_value(value: int) -> List[int]:
+    def split_value(self, value: int) -> List[int]:
         """
         Splits a 24 byte message up into 6x 32 bit messages
         Args:
@@ -388,13 +406,21 @@ class PCDDSChannel(InstrumentChannel):
         """
         if not isinstance(value, int):
             raise TypeError('Incorrect type passed to split_value')
-        return [int(value & 0xFFFFFFFF),
-                int((value >> 1*32) & 0xFFFFFFFF),
-                int((value >> 2*32) & 0xFFFFFFFF),
-                int((value >> 3*32) & 0xFFFFFFFF),
-                int((value >> 4*32) & 0xFFFFFFFF),
-                int((value >> 5*32) & 0xFFFFFFFF),
-                int((value >> 6*32) & 0xFFFFFFFF)]
+
+        bit_messages = [
+            int(value & 0xFFFFFFFF),
+            int((value >> 1*32) & 0xFFFFFFFF),
+            int((value >> 2*32) & 0xFFFFFFFF),
+            int((value >> 3*32) & 0xFFFFFFFF),
+            int((value >> 4*32) & 0xFFFFFFFF),
+            int((value >> 5*32) & 0xFFFFFFFF),
+            int((value >> 6*32) & 0xFFFFFFFF)
+        ]
+
+        if self.debug_mode():
+            print(tuple(hex(bit_message) for bit_message in bit_messages))
+
+        return bit_messages
 
     def set_next_pulse(self, pulse: int, update: bool):
         """
@@ -516,6 +542,7 @@ class PCDDSChannel(InstrumentChannel):
         else:
             cycles = int(self.clk * duration)
             cycles -= self.pulse_timing_offset
+            assert cycles > 0, "PCDDS pulse must be at least 140 ns long"
             return cycles
 
 
@@ -549,23 +576,20 @@ class PCDDS(Instrument):
         """
         self.fpga.reset(reset_mode=keysightSD1.SD_ResetMode.PULSE)
 
-    def get_debug_messages(self):
-        address_labels = ['front panel input',
-                          'pxi trigger 0',
-                          'pxi trigger 1',
-                          'pxi trigger 2',
-                          'pxi trigger 3',
-                          'output enable ch0',
-                          'delay length ch0',
-                          'output enable ch1',
-                          'delay length ch1',
-                          'output enable ch2',
-                          'delay length ch2',
-                          'output enable ch3',
-                          'delay length ch3']
-        return {label: self.fpga.get_fpga_pc_port(port=1,
-                                                   data_size=1,
-                                                   address=debug_port + 1,
-                                                   address_mode=1,
-                                                   access_mode=0)[0]
-                for debug_port, label in enumerate(address_labels)}
+    def get_debug_messages(self, id):
+        address_labels = ['pulse_addr_b',
+                          'coeff_len',
+                          'trigger',
+                          'o_en',
+                          'pxi_trigger_in',
+                          'trigger_in',
+                          ]
+        return {
+            label: self.fpga.get_fpga_pc_port(
+                port=id,
+                data_size=1,
+                address=debug_port,
+                address_mode=1,
+                access_mode=0
+            )[0]
+            for debug_port, label in enumerate(address_labels, start=1)}
