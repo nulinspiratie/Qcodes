@@ -7,7 +7,7 @@ from traceback import format_exc
 from copy import deepcopy
 from collections import OrderedDict
 from pathlib import Path
-from typing import Union
+from typing import Union, Optional
 
 from .gnuplot_format import GNUPlotFormat
 from .io import DiskIO
@@ -216,10 +216,17 @@ class DataSet(DelegateAttributes):
             return None
 
     def __getitem__(self, key):
+        if isinstance(key, tuple):
+            # Both a key and a data_group identifier is provided
+            key, data_group = key
+        else:
+            data_group = None
+
         if key in self.arrays:
+            # Unique data array found, ignore data_group
             return self.arrays[key]
         else:
-            return self.get_array(key)
+            return self.get_array(key, data_group=data_group)
 
     def _ipython_key_completions_(self):
         """Tab completion for IPython, i.e. the data arrays """
@@ -684,7 +691,8 @@ class DataSet(DelegateAttributes):
             name: bool = None,
             full_match: bool = True,
             action_indices: tuple = None,
-            set_arrays: bool = False
+            set_arrays: bool = False,
+            data_group: Optional[str] = None
     ):
         """Get arrays matching criteria
 
@@ -695,8 +703,30 @@ class DataSet(DelegateAttributes):
             action_indices: All array action indices must start with the provided
                 indices.
             set_arrays: Whether to include setpoint arrays
+            data_group: Optional data group that the array should belong to
         """
         arrays = sorted(self.arrays.values(), key=lambda arr:arr.action_indices)
+
+        # Filter by data group
+        if data_group is not None:
+            if 'data_groups' not in self.metadata:
+                warn('Metadata does not contain data groups')
+            else:
+                valid_idxs = [
+                    tuple(key) for key, val in self.metadata['data_groups']
+                    if data_group in val
+                ]
+                if not valid_idxs:
+                    warn(f'Data group {data_group} not found in metadata')
+                else:
+                    filtered_arrays = []
+                    for valid_idx in valid_idxs:
+                        for arr in arrays:
+                            if arr in filtered_arrays:
+                                continue
+                            elif arr.action_indices[:len(valid_idx)] == valid_idx:
+                                filtered_arrays.append(arr)
+                    arrays = filtered_arrays
 
         if name is not None:
             if full_match:
@@ -723,7 +753,8 @@ class DataSet(DelegateAttributes):
             self,
             name: str = None,
             action_indices: tuple = None,
-            set_arrays: bool = False
+            set_arrays: bool = False,
+            data_group: Optional[str] = None
     ) -> DataArray:
         """Get unique array matching criteria, raising an error if not unique
 
@@ -732,6 +763,7 @@ class DataSet(DelegateAttributes):
             action_indices: All array action indices must start with the provided
                 indices.
             set_arrays: Whether to include setpoint arrays
+            data_group: Optional data group that the array should belong to
 
         Returns:
              Unique DataArray matching criteria
@@ -742,7 +774,8 @@ class DataSet(DelegateAttributes):
         arrays = self.get_arrays(
             name=name,
             action_indices=action_indices,
-            set_arrays=set_arrays
+            set_arrays=set_arrays,
+            data_group=data_group
         )
         if not arrays:
             raise RuntimeError(f"Could not find any array with name {name}")
