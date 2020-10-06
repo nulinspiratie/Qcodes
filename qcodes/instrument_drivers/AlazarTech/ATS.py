@@ -1055,7 +1055,7 @@ class Buffer:
             self._allocated = False
             e = ctypes.windll.kernel32.GetLastError()
             raise Exception("Memory allocation error: " + str(e))
-        elif self.addr // 2**31:
+        elif self.addr >> 32:
             raise Exception(
                 'Memory allcation address exceeds 32 bits. '
                 'Raising error to avoid BSOD'
