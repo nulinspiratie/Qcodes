@@ -1033,6 +1033,7 @@ class Buffer:
 
         # Log buffer information
         if self.logger:
+            # Divide address by 32 bits. If larger than 1, this results in a BSOD
             address_bits = None if self.addr is None else round(self.addr/2**32, 3)
             message = (
                 f'Created buffer '
