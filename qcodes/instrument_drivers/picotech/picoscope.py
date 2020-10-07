@@ -178,7 +178,7 @@ class PicoScope(Instrument):
         """Use PicoParameter by default"""
         super().add_parameter(name=name, parameter_class=parameter_class, parent=self, **kwargs)
 
-    def __init__(self, name, postpone_open=False, **kwargs):
+    def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
 
         self.channel_names = ['A', 'B', 'C', 'D']
@@ -189,11 +189,10 @@ class PicoScope(Instrument):
 
 
         # Open PicoScope 3000 Series device
-        if not postpone_open:
-            status["openunit"] = picosdk.ps3000aOpenUnit(ctypes.byref(self._chandle), None)
-            try:
-                assert_pico_ok(status["openunit"])
-            except:  # PicoNotOkError:
+        status["openunit"] = picosdk.ps3000aOpenUnit(ctypes.byref(self._chandle), None)
+        try:
+            assert_pico_ok(status["openunit"])
+        except:  # PicoNotOkError:
 
                 powerStatus = status["openunit"]
 
