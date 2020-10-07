@@ -2,6 +2,7 @@ from qcodes.instrument.base import Instrument
 from qcodes.instrument.channel import InstrumentChannel, ChannelList
 from qcodes.utils.validators import *
 from qcodes.instrument.parameter import Parameter
+from typing import Callable, List
 
 import ctypes
 import numpy as np
@@ -105,9 +106,9 @@ class PicoParameter(Parameter):
             # Evaluate the set function with the necessary set parameter values
             if isinstance(self.parent, InstrumentChannel):
                 # Also pass the channel id
-                return_val = self.set_function(self.parent.id, *set_vals)
+                return_val = self.set_function(self.parent.parent._chandle, picosdk.PS3000A_CHANNEL[f'PS3000A_CHANNEL_{self.parent.id}'], *set_vals)
             else:
-                return_val = self.set_function(*set_vals)
+                return_val = self.set_function(self.parent._chandle, *set_vals)
             # Check if the returned value is an error
             method_name = self.set_function.__func__.__name__
             error_check(return_val, method_name=method_name)
@@ -144,27 +145,27 @@ class ScopeChannel(InstrumentChannel):
         self.enabled = PicoParameter('enabled',
                                      initial_value=True,
                                      vals=Bool(),
-                                     set_function=picosdk.ps300aSetChannel,
-                                     set_args=['type', 'range', 'analogue_offset'])
+                                     set_function=picosdk.ps3000aSetChannel,
+                                     set_args=['enabled', 'type', 'range', 'analogue_offset'])
 
         self.type = PicoParameter('type',
                                      initial_value='DC',
-                                     vals=Enum(**picosdk.PICO_COUPLING),
-                                     set_function=picosdk.ps300aSetChannel,
-                                     set_args=['enabled', 'range', 'analogue_offset'])
+                                     val_mapping=picosdk.PICO_COUPLING,
+                                     set_function=picosdk.ps3000aSetChannel,
+                                     set_args=['enabled', 'type', 'range', 'analogue_offset'])
 
         self.range = PicoParameter('range',
-                                  initial_value=True,
-                                  vals=Enum(**picosdk.PICO_VOLTAGE_RANGE),
-                                  set_function=picosdk.ps300aSetChannel,
-                                  set_args=['enabled', 'type', 'analogue_offset'])
+                                  initial_value='PS3000A_2V',
+                                  val_mapping=picosdk.PS3000A_RANGE,
+                                  set_function=picosdk.ps3000aSetChannel,
+                                  set_args=['enabled', 'type', 'range', 'analogue_offset'])
 
         self.analogue_offset = PicoParameter('analogue_offset',
-                                   initial_value=True,
+                                   initial_value=0,
                                    vals=Numbers(),
                                    # get_function=picosdk.ps3000aGetAnalogueOffset,
-                                   set_function=picosdk.ps300aSetChannel,
-                                   set_args=['enabled', 'type', 'range'])
+                                   set_function=picosdk.ps3000aSetChannel,
+                                   set_args=['enabled', 'type', 'range', 'analogue_offset'])
 
     def add_parameter(self, name: str, parameter_class: type=PicoParameter, **kwargs):
         """Use PicoParameter by default"""
@@ -177,45 +178,57 @@ class PicoScope(Instrument):
         """Use PicoParameter by default"""
         super().add_parameter(name=name, parameter_class=parameter_class, parent=self, **kwargs)
 
-    def __init__(self, name, **kwargs):
-        self.channels = ['A', 'B', 'C', 'D']
-        self.buffers = {ch : None for ch in self.channels}
+    def __init__(self, name, postpone_open=False, **kwargs):
+        super().__init__(name, **kwargs)
+
+        self.channel_names = ['A', 'B', 'C', 'D']
+        self.buffers = {ch : None for ch in self.channel_names}
         # Create chandle and status ready for use
         self._chandle = ctypes.c_int16()
         status = {}
 
 
         # Open PicoScope 3000 Series device
-        status["openunit"] = ps.ps3000aOpenUnit(ctypes.byref(self._chandle), None)
-        try:
-            assert_pico_ok(status["openunit"])
-        except:  # PicoNotOkError:
+        if not postpone_open:
+            status["openunit"] = picosdk.ps3000aOpenUnit(ctypes.byref(self._chandle), None)
+            try:
+                assert_pico_ok(status["openunit"])
+            except:  # PicoNotOkError:
 
-            powerStatus = status["openunit"]
+                powerStatus = status["openunit"]
 
-            if powerStatus == 286:
-                status["changePowerSource"] = ps.ps3000aChangePowerSource(self._chandle, powerStatus)
-            elif powerStatus == 282:
-                status["changePowerSource"] = ps.ps3000aChangePowerSource(self._chandle, powerStatus)
-            else:
-                raise
+                if powerStatus == 286:
+                    status["changePowerSource"] = picosdk.ps3000aChangePowerSource(self._chandle, powerStatus)
+                elif powerStatus == 282:
+                    status["changePowerSource"] = picosdk.ps3000aChangePowerSource(self._chandle, powerStatus)
+                else:
+                    raise
 
-            assert_pico_ok(status["changePowerSource"])
+                assert_pico_ok(status["changePowerSource"])
 
+        channels = ChannelList(self,
+                               name='channels',
+                               chan_type=ScopeChannel)
 
+        for ch in self.channel_names:
+            channel = ScopeChannel(self, name=f'ch{ch}', id=ch)
+            setattr(self, f'ch{ch}', channel)
+            channels.append(channel)
 
-        self.initialize_driver()
-        super().__init__(name, **kwargs)
+        self.add_submodule('channels', channels)
+
+        # self.initialize_driver()
+
 
     def initialize_driver(self):
         analogue_offset = 0.0
-        channel_range = ps.PS3000A_RANGE['PS3000A_2V']
+        channel_range = picosdk.PS3000A_RANGE['PS3000A_2V']
         status = {}
         for ch in self.channels:
-            status[f"setCh{ch}"] = ps.ps3000aSetChannel(self._chandle,
-                                                    ps.PS3000A_CHANNEL[f'PS3000A_CHANNEL_{ch}'],
+            status[f"setCh{ch}"] = picosdk.ps3000aSetChannel(self._chandle,
+                                                    picosdk.PS3000A_CHANNEL[f'PS3000A_CHANNEL_{ch}'],
                                                     True, #enable
-                                                    ps.PS3000A_COUPLING['PS3000A_DC'],
+                                                    picosdk.PS3000A_COUPLING['PS3000A_DC'],
                                                     channel_range,
                                                     analogue_offset)
             assert_pico_ok(status[f"setCh{ch}"])
@@ -237,13 +250,13 @@ class PicoScope(Instrument):
         # segment index = 0
         # ratio mode = PS3000A_RATIO_MODE_NONE = 0
         for ch in self.channels:
-            status[f"setDataBuffers{ch}"] = ps.ps3000aSetDataBuffers(self._chandle,
-                                                                     ps.PS3000A_CHANNEL[f'PS3000A_CHANNEL_{ch}'],
+            status[f"setDataBuffers{ch}"] = picosdk.ps3000aSetDataBuffers(self._chandle,
+                                                                     picosdk.PS3000A_CHANNEL[f'PS3000A_CHANNEL_{ch}'],
                                                                      self._raw_buffers[ch].ctypes.data_as(ctypes.POINTER(ctypes.c_int16)),
                                                                      None,
                                                                      buffer_size,
                                                                      memory_segment,
-                                                                     ps.PS3000A_RATIO_MODE['PS3000A_RATIO_MODE_NONE'])
+                                                                     picosdk.PS3000A_RATIO_MODE['PS3000A_RATIO_MODE_NONE'])
             assert_pico_ok(status[f"setDataBuffers{ch}"])
         return status
 
@@ -251,7 +264,7 @@ class PicoScope(Instrument):
         status = {}
 
         sample_interval = ctypes.c_int32(250)
-        sample_units = ps.PS3000A_TIME_UNITS['PS3000A_US']
+        sample_units = picosdk.PS3000A_TIME_UNITS['PS3000A_US']
         # We are not triggering:
         max_pre_trigger_samples = 0
         auto_stop_on = True
@@ -260,14 +273,14 @@ class PicoScope(Instrument):
         total_samples = max([np.product(buf.shape) for buf in self._raw_buffers.values()])
         buffer_size = max([buf.shape[-1] for buf in self._raw_buffers.values()])
         print(f"Total samples = {total_samples}, buffer_size = {buffer_size}")
-        status["runStreaming"] = ps.ps3000aRunStreaming(self._chandle,
+        status["runStreaming"] = picosdk.ps3000aRunStreaming(self._chandle,
                                                         ctypes.byref(sample_interval),
                                                         sample_units,
                                                         max_pre_trigger_samples,
                                                         total_samples,
                                                         auto_stop_on,
                                                         downsample_ratio,
-                                                        ps.PS3000A_RATIO_MODE['PS3000A_RATIO_MODE_NONE'],
+                                                        picosdk.PS3000A_RATIO_MODE['PS3000A_RATIO_MODE_NONE'],
                                                         buffer_size)
         assert_pico_ok(status["runStreaming"])
 
@@ -305,7 +318,7 @@ class PicoScope(Instrument):
         from functools import partial
         mydickt = dict(next_sample=next_sample, auto_stop_outer=auto_stop_outer, was_called_back=was_called_back)
         # Convert the python function into a C function pointer.
-        c_callback = ps.StreamingReadyType(partial(streaming_callback, mydickt))
+        c_callback = picosdk.StreamingReadyType(partial(streaming_callback, mydickt))
 
 
         mydickt['next_sample'] = next_sample
@@ -313,7 +326,7 @@ class PicoScope(Instrument):
         # Fetch data from the driver in a loop, copying it out of the registered buffers and into our complete one.
         while mydickt['next_sample'] < total_samples and not auto_stop_outer:
             mydickt['was_called_back'] = False
-            status["getStreamingLastestValues"] = ps.ps3000aGetStreamingLatestValues(self._chandle, c_callback, None)
+            status["getStreamingLastestValues"] = picosdk.ps3000aGetStreamingLatestValues(self._chandle, c_callback, None)
             if not was_called_back:
                 # If we weren't called back by the driver, this means no data is ready. Sleep for a short while before trying
                 # again.
@@ -325,7 +338,7 @@ class PicoScope(Instrument):
     def process_data(self):
         status = {}
         total_samples = max([np.product(buf.shape) for buf in self._raw_buffers])
-        channel_range = ps.PS3000A_RANGE['PS3000A_2V']
+        channel_range = picosdk.PS3000A_RANGE['PS3000A_2V']
         sample_interval = ctypes.c_int32(250)
         actual_sample_interval = sample_interval.value
         actual_sample_interval_ns = actual_sample_interval * 1000
@@ -334,7 +347,7 @@ class PicoScope(Instrument):
         # handle = chandle
         # pointer to value = ctypes.byref(maxADC)
         max_adc = ctypes.c_int16()
-        status["maximumValue"] = ps.ps3000aMaximumValue(self._chandle, ctypes.byref(max_adc ))
+        status["maximumValue"] = picosdk.ps3000aMaximumValue(self._chandle, ctypes.byref(max_adc ))
         assert_pico_ok(status["maximumValue"])
 
         # Convert ADC counts data to mV
