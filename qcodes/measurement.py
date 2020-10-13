@@ -165,7 +165,8 @@ class Measurement:
                 self.data_arrays = {}
                 self.set_arrays = {}
 
-                self.log('Measurement started')
+                self.log(f'Measurement started {self.dataset.location}')
+                print(f'Measurement started {self.dataset.location}')
 
             else:
                 if threading.current_thread() is not Measurement.measurement_thread:
