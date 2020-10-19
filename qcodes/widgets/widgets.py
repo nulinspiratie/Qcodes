@@ -47,6 +47,7 @@ class LoopManagerWidget(DOMWidget):
         widgets["action_label"] = Label("")
         widgets["loop_indices_label"] = Label("")
         widgets["estimated_completion_time"] = Label("")
+        widgets["remaining_time"] = Label("")
 
         if self.layout:
             widgets["layout_button"] = ToggleButton(
@@ -178,6 +179,7 @@ class LoopManagerWidget(DOMWidget):
             self.widgets["pause_button"].icon = "pause"
             self.widgets["loop_indices_label"].value = ""
             self.widgets["estimated_completion_time"].value = ""
+            self.widgets["remaining_time"].value = ""
             self.widgets["action_label"].value = ""
             self.widgets["notify_checkbox"].value = False
         else:
@@ -201,10 +203,15 @@ class LoopManagerWidget(DOMWidget):
             ].value = f"Loop {loop_indices} of {loop_shape}"
 
             start_time = datetime.strptime(qc.active_dataset().metadata['t_start'], '%Y-%m-%d %H:%M:%S')
-            estimated_finish_time = start_time + (datetime.now() - start_time) / (qc.active_dataset().fraction_complete() + 1e-3)
+            remaining_time = (datetime.now() - start_time) / (qc.active_dataset().fraction_complete() + 1e-6)
+            estimated_finish_time = start_time + remaining_time
             self.widgets[
                 "estimated_completion_time"
-            ].value = f"Estimated completion time: {datetime.strftime(estimated_finish_time, '%Y-%m-%d %H:%M:%S')}"
+            ].value = f"Estimated completion time: {datetime.strftime(estimated_finish_time, '%Y-%m-%d %H:%M')}"
+            self.widgets[
+                "remaining_time"
+            ].value = f"Remaining time: {int(remaining_time.total_seconds() / 3600)} hours, " \
+                      f"{remaining_time.total_seconds() / 60:.1f} minutes"
 
             # Update notification checkbox
             notify_value = getattr(qc.active_measurement(), 'notify', False)
