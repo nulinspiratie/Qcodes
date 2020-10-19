@@ -5,6 +5,7 @@ import os
 import time
 from IPython.display import display
 from ipywidgets.widgets import *
+from datetime import datetime
 from traitlets import Unicode, Bool
 
 import qcodes as qc
@@ -45,6 +46,7 @@ class LoopManagerWidget(DOMWidget):
         widgets["active_measurement_label"] = Label(value="No active measurement")
         widgets["action_label"] = Label("")
         widgets["loop_indices_label"] = Label("")
+        widgets["estimated_completion_time"] = Label("")
 
         if self.layout:
             widgets["layout_button"] = ToggleButton(
@@ -175,6 +177,7 @@ class LoopManagerWidget(DOMWidget):
             self.widgets["active_measurement_label"].value = "No active measurement"
             self.widgets["pause_button"].icon = "pause"
             self.widgets["loop_indices_label"].value = ""
+            self.widgets["estimated_completion_time"].value = ""
             self.widgets["action_label"].value = ""
             self.widgets["notify_checkbox"].value = False
         else:
@@ -196,6 +199,12 @@ class LoopManagerWidget(DOMWidget):
             self.widgets[
                 "loop_indices_label"
             ].value = f"Loop {loop_indices} of {loop_shape}"
+
+            start_time = datetime.strptime(qc.active_dataset().metadata['t_start'], '%Y-%m-%d %H:%M:%S')
+            estimated_finish_time = start_time + (datetime.now() - start_time) / (qc.active_dataset().fraction_complete() + 1e-3)
+            self.widgets[
+                "estimated_completion_time"
+            ].value = f"Estimated completion time: {datetime.strftime(estimated_finish_time, '%Y-%m-%d %H:%M:%S')}"
 
             # Update notification checkbox
             notify_value = getattr(qc.active_measurement(), 'notify', False)
