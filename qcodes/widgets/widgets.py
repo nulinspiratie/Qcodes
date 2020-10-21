@@ -203,7 +203,8 @@ class LoopManagerWidget(DOMWidget):
             ].value = f"Loop {loop_indices} of {loop_shape}"
 
             start_time = datetime.strptime(qc.active_dataset().metadata['t_start'], '%Y-%m-%d %H:%M:%S')
-            remaining_time = (datetime.now() - start_time) / (qc.active_dataset().fraction_complete() + 1e-6)
+            time_elapsed = datetime.now() - start_time
+            remaining_time = time_elapsed * (1/(qc.active_dataset().fraction_complete() + 1e-6) - 1)
             estimated_finish_time = start_time + remaining_time
             self.widgets[
                 "estimated_completion_time"
