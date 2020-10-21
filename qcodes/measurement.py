@@ -260,6 +260,8 @@ class Measurement:
             self.dataset.finalize()
             self.dataset.active = False
 
+            self.log(f'Measurement finished {self.dataset.location}')
+
         else:
             msmt.step_out(reduce_dimension=False)
 
