@@ -1,5 +1,6 @@
 import builtins
 import io
+import pprint
 import json
 import logging
 import math
@@ -809,7 +810,7 @@ class PerformanceTimer():
         return self._timing_to_str(val)
 
     def __repr__(self):
-        return repr(self._timings_to_str(self.timings))
+        return pprint.pformat(self._timings_to_str(self.timings), indent=2)
 
     def clear(self):
         self.timings.clear()
