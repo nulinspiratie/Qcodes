@@ -165,7 +165,8 @@ class Measurement:
                 self.data_arrays = {}
                 self.set_arrays = {}
 
-                self.log('Measurement started')
+                self.log(f'Measurement started {self.dataset.location}')
+                print(f'Measurement started {self.dataset.location}')
 
             else:
                 if threading.current_thread() is not Measurement.measurement_thread:
@@ -258,6 +259,8 @@ class Measurement:
             self.dataset.add_metadata({"t_stop": t_stop})
             self.dataset.finalize()
             self.dataset.active = False
+
+            self.log(f'Measurement finished {self.dataset.location}')
 
         else:
             msmt.step_out(reduce_dimension=False)
