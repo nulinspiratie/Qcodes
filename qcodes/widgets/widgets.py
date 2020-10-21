@@ -205,7 +205,7 @@ class LoopManagerWidget(DOMWidget):
             start_time = datetime.strptime(qc.active_dataset().metadata['t_start'], '%Y-%m-%d %H:%M:%S')
             time_elapsed = datetime.now() - start_time
             remaining_time = time_elapsed * (1/(qc.active_dataset().fraction_complete() + 1e-6) - 1)
-            estimated_finish_time = start_time + remaining_time
+            estimated_finish_time = start_time + time_elapsed + remaining_time
             self.widgets[
                 "estimated_completion_time"
             ].value = f"Estimated completion time: {datetime.strftime(estimated_finish_time, '%Y-%m-%d %H:%M')}"
