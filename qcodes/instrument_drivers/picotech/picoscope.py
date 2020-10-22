@@ -1,4 +1,5 @@
 import numpy as np
+import logging
 import time
 from typing import Callable, List
 from matplotlib import pyplot as plt
@@ -15,6 +16,8 @@ from picosdk.ps3000a import ps3000a as ps
 from picosdk.functions import adc2mV, assert_pico_ok
 from picosdk.constants import PICO_STATUS_LOOKUP
 
+
+logger = logging.getLogger(__name__)
 
 
 def error_check(value, method_name=None):
@@ -232,6 +235,7 @@ class PicoScope(Instrument):
 
         self.points_per_trace = Parameter(set_cmd=None, initial_value=1000)
         self.samples = Parameter(set_cmd=None, initial_value=10)
+        self.sample_rate = Parameter(set_cmd=None, initial_value=500e3)
 
     @property
     def active_channels(self):
@@ -362,8 +366,9 @@ class PicoScope(Instrument):
         self.setup_buffers(num_buffers=self.samples(), buffer_size=self.points_per_trace(), memory_segment=0)
 
         # Begin streaming mode:
-        sampleInterval = ctypes.c_int32(250)
-        sampleUnits = ps.PS3000A_TIME_UNITS['PS3000A_US']
+        interval = 1 / self.sample_rate()
+        sampleInterval = ctypes.c_int32(int(interval * 1e9))
+        sampleUnits = ps.PS3000A_TIME_UNITS['PS3000A_NS']
         # We are not triggering:
         maxPreTriggerSamples = 0
         autoStopOn = 1
@@ -381,9 +386,9 @@ class PicoScope(Instrument):
         assert_pico_ok(status["runStreaming"])
 
         actualSampleInterval = sampleInterval.value
-        self.streaming_info['actualSampleIntervalNs'] = actualSampleInterval * 1000
+        self.streaming_info['actualSampleIntervalNs'] = actualSampleInterval
 
-        print("Capturing at sample interval %s ns" % self.streaming_info['actualSampleIntervalNs'])
+        logger.debug("Capturing at sample interval %s ns" % self.streaming_info['actualSampleIntervalNs'])
 
         self.streaming_info['nextSample'] = 0
         self.streaming_info['autoStopOuter'] = False
@@ -401,13 +406,14 @@ class PicoScope(Instrument):
                 # again.
                 time.sleep(0.01)
 
-        print("Done grabbing values.")
+        logger.debug("Done grabbing values.")
 
         # Stop the scope
         # handle = self._chandle
         status["stop"] = ps.ps3000aStop(self._chandle)
         assert_pico_ok(status["stop"])
 
+        logger.debug('Processing data')
         buffers = self.process_data()
         return buffers
 
@@ -445,7 +451,7 @@ class PicoScope(Instrument):
 
     def plot_traces(self):
         plot = MatPlot(subplots=len(self.buffers))
-        t_list = np.arange(self.points_per_trace()) * self.streaming_info['actualSampleIntervalNs'] / 1e9
+        t_list = np.arange(self.points_per_trace()) * (self.streaming_info['actualSampleIntervalNs'] / 1e9)
         samples = np.arange(self.samples(), dtype=float)
         for k, (ch, buffer) in enumerate(self.buffers.items()):
             plot[k].add(buffer, x=t_list, y=samples)
