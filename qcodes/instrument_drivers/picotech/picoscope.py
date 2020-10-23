@@ -1,16 +1,17 @@
 import numpy as np
 import logging
 import time
-from typing import Callable, List
+from typing import Callable, List, Union
 from matplotlib import pyplot as plt
 from functools import partial, wraps
 import ctypes
 
 from qcodes.instrument.base import Instrument
 from qcodes.instrument.channel import InstrumentChannel, ChannelList
-from qcodes.utils.validators import *
+from qcodes.utils import validators as vals
 from qcodes.instrument.parameter import Parameter
 from qcodes import MatPlot
+from qcodes.utils.helpers import PerformanceTimer
 
 from picosdk.ps3000a import ps3000a as ps
 from picosdk.functions import adc2mV, assert_pico_ok
@@ -18,6 +19,31 @@ from picosdk.constants import PICO_STATUS_LOOKUP
 
 
 logger = logging.getLogger(__name__)
+
+
+# REMOVEME
+import ctypes
+from picosdk.ps3000a import ps3000a as ps
+import numpy as np
+import matplotlib.pyplot as plt
+from picosdk.functions import adc2mV, assert_pico_ok
+
+
+
+def adc2mV(bufferADC, range, maxADC, inverse=False):
+    """Takes a buffer of raw adc count values and converts it into millivolts"""
+    if isinstance(bufferADC, (list, tuple)):
+        bufferADC = np.array(bufferADC)
+
+    channelInputRanges = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000]
+    vRange = channelInputRanges[range]
+    if inverse:
+        value = int(bufferADC / (vRange / maxADC.value))
+    else:
+        value = bufferADC * (vRange / maxADC.value)
+    # bufferV = [(x * vRange) / maxADC.value for x in bufferADC]
+    return value
+
 
 
 def error_check(value, method_name=None):
@@ -169,7 +195,7 @@ class ScopeChannel(InstrumentChannel):
         self.enabled = PicoParameter(
             "enabled",
             initial_value=True,
-            vals=Bool(),
+            vals=vals.Bool(),
             set_function=ps.ps3000aSetChannel,
             set_args=["enabled", "coupling", "range", "offset"],
         )
@@ -193,7 +219,7 @@ class ScopeChannel(InstrumentChannel):
         self.offset = PicoParameter(
             "offset",
             initial_value=0,
-            vals=Numbers(),
+            vals=vals.Numbers(),
             # get_function=picosdk.ps3000aGetAnalogueOffset,
             set_function=ps.ps3000aSetChannel,
             set_args=["enabled", "coupling", "range", "offset"],
@@ -236,6 +262,32 @@ class PicoScope(Instrument):
         self.points_per_trace = Parameter(set_cmd=None, initial_value=1000)
         self.samples = Parameter(set_cmd=None, initial_value=10)
         self.sample_rate = Parameter(set_cmd=None, initial_value=500e3)
+
+        # Trigger parameters
+        self.use_trigger = Parameter(set_cmd=None, initial_value=False, vals=vals.Bool())
+        self.trigger_channel = Parameter(
+            set_cmd=None, initial_value='external',
+            val_mapping={
+                **{ch.id: ps.PS3000A_CHANNEL[f'PS3000A_CHANNEL_{ch.id}'] for ch in self.channels},
+                'external': ps.PS3000A_CHANNEL[f'PS3000A_EXTERNAL']
+            }
+        )
+        self.trigger_threshold = Parameter(set_cmd=None, unit='V', initial_value=0.5, vals=vals.Numbers())
+        self.trigger_direction = Parameter(
+            set_cmd=None, initial_value='rising', val_mapping={
+                key: ps.PS3000A_THRESHOLD_DIRECTION[f'PS3000A_{key.upper()}']
+                for key in ['above', 'below', 'rising', 'falling', 'rising_or_falling']
+            }
+        )
+        self.trigger_delay = Parameter(set_cmd=None, initial_value=0, unit='s')
+        self.autotrigger_ms = Parameter(set_cmd=None, initial_value=0, unit='ms',
+                                        docstring='milliseconds to wait after trigger. 0 means wait indefinitely')
+
+
+        # Delay between successive fetches
+        self.stream_fetch_pause = Parameter(set_cmd=None, initial_value=0.002)
+
+        self.timings = PerformanceTimer()
 
     @property
     def active_channels(self):
@@ -345,15 +397,35 @@ class PicoScope(Instrument):
         return status
 
     def setup_trigger(self):
-        # Sets up single trigger
+        status = {}
+
+        # Determine threshold ADC value
+        maxADC = ctypes.c_int16()
+        status["maximumValue"] = ps.ps3000aMaximumValue(self._chandle, ctypes.byref(maxADC))
+        assert_pico_ok(status["maximumValue"])
+        trigger_channel_id = self.trigger_channel()
+        if len(trigger_channel_id) == 1:
+            trigger_channel = self.channels[f'ch{trigger_channel_id}']
+        threshold_adc = adc2mV(self.trigger_threshold(), trigger_channel.range.raw_value, maxADC, inverse=True)
+        logger.debug(f'Trigger threshold adc: {threshold_adc}')
+
+        # Sets up simple trigger
         # Handle = Chandle
-        # Source = ps3000A_channel_B = 0
         # Enable = 0
+        # Source = ps3000A_channel_B = 0
         # Threshold = 1024 ADC counts
         # Direction = ps3000A_Falling = 3
         # Delay = 0
         # autoTrigger_ms = 1000
-        trigger_status = ps.ps3000aSetSimpleTrigger(self._chandle, 1, 0, 1024, 3, 0, 1000)
+        trigger_status = ps.ps3000aSetSimpleTrigger(
+            self._chandle,
+            self.use_trigger.raw_value,
+            self.trigger_channel.raw_value,  # convert to channel idx
+            threshold_adc, # convert to int
+            self.trigger_direction.raw_value,  # rising, falling, rising_or_falling, above, below,
+            int(self.trigger_delay.raw_value * self.sample_rate()),  # number of sample periods
+            self.autotrigger_ms.raw_value
+        )
         assert_pico_ok(trigger_status)
 
 
@@ -363,61 +435,69 @@ class PicoScope(Instrument):
 
         totalSamples = self.samples() * self.points_per_trace()
 
-        self.setup_buffers(num_buffers=self.samples(), buffer_size=self.points_per_trace(), memory_segment=0)
+        with self.timings.record('setup_buffers'):
+            self.setup_buffers(num_buffers=self.samples(), buffer_size=self.points_per_trace(), memory_segment=0)
 
         # Begin streaming mode:
-        interval = 1 / self.sample_rate()
-        sampleInterval = ctypes.c_int32(int(interval * 1e9))
-        sampleUnits = ps.PS3000A_TIME_UNITS['PS3000A_NS']
-        # We are not triggering:
-        maxPreTriggerSamples = 0
-        autoStopOn = 1
-        # No downsampling:
-        downsampleRatio = 1
-        status["runStreaming"] = ps.ps3000aRunStreaming(self._chandle,
-                                                        ctypes.byref(sampleInterval),
-                                                        sampleUnits,
-                                                        maxPreTriggerSamples,
-                                                        totalSamples,
-                                                        autoStopOn,
-                                                        downsampleRatio,
-                                                        ps.PS3000A_RATIO_MODE['PS3000A_RATIO_MODE_NONE'],
-                                                        self.points_per_trace())
-        assert_pico_ok(status["runStreaming"])
+        with self.timings.record('begin_streaming'):
+            interval = 1 / self.sample_rate()
+            sampleInterval = ctypes.c_int32(int(interval * 1e9))
+            sampleUnits = ps.PS3000A_TIME_UNITS['PS3000A_NS']
+            # We are not triggering:
+            maxPreTriggerSamples = 0
+            autoStopOn = 1
+            # No downsampling:
+            downsampleRatio = 1
+            status["runStreaming"] = ps.ps3000aRunStreaming(self._chandle,
+                                                            ctypes.byref(sampleInterval),
+                                                            sampleUnits,
+                                                            maxPreTriggerSamples,
+                                                            totalSamples,
+                                                            autoStopOn,
+                                                            downsampleRatio,
+                                                            ps.PS3000A_RATIO_MODE['PS3000A_RATIO_MODE_NONE'],
+                                                            self.points_per_trace())
+            assert_pico_ok(status["runStreaming"])
 
-        actualSampleInterval = sampleInterval.value
-        self.streaming_info['actualSampleIntervalNs'] = actualSampleInterval
+            actualSampleInterval = sampleInterval.value
+            self.streaming_info['actualSampleIntervalNs'] = actualSampleInterval
 
-        logger.debug("Capturing at sample interval %s ns" % self.streaming_info['actualSampleIntervalNs'])
+            logger.debug("Capturing at sample interval %s ns" % self.streaming_info['actualSampleIntervalNs'])
 
-        self.streaming_info['nextSample'] = 0
-        self.streaming_info['autoStopOuter'] = False
-        self.streaming_info['wasCalledBack'] = False
+            self.streaming_info['nextSample'] = 0
+            self.streaming_info['autoStopOuter'] = False
+            self.streaming_info['wasCalledBack'] = False
 
-        # Convert the python function into a C function pointer.
-        cFuncPtr = ps.StreamingReadyType(self.streaming_callback)
+            # Convert the python function into a C function pointer.
+            cFuncPtr = ps.StreamingReadyType(self.streaming_callback)
 
-        # Fetch data from the driver in a loop, copying it out of the registered buffers and into our complete one.
-        while self.streaming_info['nextSample'] < totalSamples and not self.streaming_info['autoStopOuter']:
-            wasCalledBack = False
-            status["getStreamingLastestValues"] = ps.ps3000aGetStreamingLatestValues(self._chandle, cFuncPtr, None)
-            if not wasCalledBack:
-                # If we weren't called back by the driver, this means no data is ready. Sleep for a short while before trying
-                # again.
-                time.sleep(0.01)
+
+        with self.timings.record('fetch_data'):
+            # Fetch data from the driver in a loop, copying it out of the registered buffers and into our complete one.
+            while self.streaming_info['nextSample'] < totalSamples and not self.streaming_info['autoStopOuter']:
+                wasCalledBack = False
+                status["getStreamingLastestValues"] = ps.ps3000aGetStreamingLatestValues(self._chandle, cFuncPtr, None)
+                if not wasCalledBack:
+                    # If we weren't called back by the driver, this means no data is ready. Sleep for a short while before trying
+                    # again.
+                    time.sleep(self.stream_fetch_pause())
 
         logger.debug("Done grabbing values.")
 
         # Stop the scope
-        # handle = self._chandle
-        status["stop"] = ps.ps3000aStop(self._chandle)
-        assert_pico_ok(status["stop"])
+        with self.timings.record('stop_scope'):
+            # handle = self._chandle
+            status["stop"] = ps.ps3000aStop(self._chandle)
+            assert_pico_ok(status["stop"])
 
         logger.debug('Processing data')
-        buffers = self.process_data()
+        with self.timings.record('process_data'):
+            buffers = self.process_data()
         return buffers
 
-    def streaming_callback(self, handle, noOfSamples, startIndex, overflow, triggerAt, triggered, autoStop, param):
+    def streaming_callback(
+            self, handle, noOfSamples, startIndex, overflow, triggerAt, triggered, autoStop, param
+    ):
         self.streaming_info['wasCalledBack'] = True
         self.streaming_info['points_per_callback'] = noOfSamples
 
@@ -428,6 +508,8 @@ class PicoScope(Instrument):
         for ch in self.active_channel_ids:
             self._raw_buffers[ch][nextSample:destEnd] = self._raw_single_buffers[ch][startIndex:sourceEnd]
         self.streaming_info['nextSample'] += noOfSamples
+
+        # print('Triggered:', triggered, 'triggerAt', triggerAt)
 
         if autoStop:
             self.streaming_info['autoStopOuter'] = True
@@ -459,6 +541,341 @@ class PicoScope(Instrument):
             plot[k].set_title(f'Channel {ch}')
 
     def acquisition(self):
+        import ctypes
+        from picosdk.ps3000a import ps3000a as ps
+        import numpy as np
+        import matplotlib.pyplot as plt
+        from picosdk.functions import adc2mV, assert_pico_ok
+
+        # Create chandle and status ready for use
+        status = {}
+
+        # Set up channel A
+        # handle = self._chandle
+        # channel = PS3000A_CHANNEL_A = 0
+        # enabled = 1
+        # coupling type = PS3000A_DC = 1
+        # range = PS3000A_10V = 8
+        # analogue offset = 0 V
+        chARange = 8
+        status["setChA"] = ps.ps3000aSetChannel(self._chandle, 0, 1, 1, chARange, 0)
+        assert_pico_ok(status["setChA"])
+
+        # Sets up single trigger
+        # Handle = Chandle
+        # Enable = 1
+        # Source = ps3000A_channel_A = 0
+        # Threshold = 1024 ADC counts
+        # Direction = ps3000A_Falling = 3
+        # Delay = 0
+        # autoTrigger_ms = 1000
+        status["trigger"] = ps.ps3000aSetSimpleTrigger(self._chandle, 1, 0, 1024, 3, 0, 1000)
+        assert_pico_ok(status["trigger"])
+
+        # Setting the number of sample to be collected
+        preTriggerSamples = 40000
+        postTriggerSamples = 40000
+        maxsamples = preTriggerSamples + postTriggerSamples
+
+        # Gets timebase innfomation
+        # Handle = self._chandle
+        # Timebase = 2 = timebase
+        # Nosample = maxsamples
+        # TimeIntervalNanoseconds = ctypes.byref(timeIntervalns)
+        # MaxSamples = ctypes.byref(returnedMaxSamples)
+        # Segement index = 0
+        timebase = 2
+        timeIntervalns = ctypes.c_float()
+        returnedMaxSamples = ctypes.c_int16()
+        status["GetTimebase"] = ps.ps3000aGetTimebase2(self._chandle, timebase, maxsamples, ctypes.byref(timeIntervalns), 1,
+                                                       ctypes.byref(returnedMaxSamples), 0)
+        assert_pico_ok(status["GetTimebase"])
+
+        # Creates a overlow location for data
+        overflow = ctypes.c_int16()
+        # Creates converted types maxsamples
+        cmaxSamples = ctypes.c_int32(maxsamples)
+
+        # Handle = Chandle
+        # nSegments = 10
+        # nMaxSamples = ctypes.byref(cmaxSamples)
+
+        status["MemorySegments"] = ps.ps3000aMemorySegments(self._chandle, 10, ctypes.byref(cmaxSamples))
+        assert_pico_ok(status["MemorySegments"])
+
+        # sets number of captures
+        status["SetNoOfCaptures"] = ps.ps3000aSetNoOfCaptures(self._chandle, 10)
+        assert_pico_ok(status["SetNoOfCaptures"])
+
+        # Starts the block capture
+        # Handle = self._chandle
+        # Number of prTriggerSamples
+        # Number of postTriggerSamples
+        # Timebase = 2 = 4ns (see Programmer's guide for more information on timebases)
+        # time indisposed ms = None (This is not needed within the example)
+        # Segment index = 0
+        # LpRead = None
+        # pParameter = None
+        status["runblock"] = ps.ps3000aRunBlock(self._chandle, preTriggerSamples, postTriggerSamples, timebase, 1, None, 0,
+                                                None, None)
+        assert_pico_ok(status["runblock"])
+
+        # Create buffers ready for assigning pointers for data collection
+        # bufferAMax = (ctypes.c_int16 * maxsamples)()
+        # bufferAMin = (ctypes.c_int16 * maxsamples)() # used for downsampling which isn't in the scope of this example
+
+        bufferAMax = np.empty(maxsamples, dtype=np.dtype('int16'))
+        bufferAMin = np.empty(maxsamples,
+                              dtype=np.dtype('int16'))  # used for downsampling which isn't in the scope of this example
+
+        # Setting the data buffer location for data collection from channel A
+        # Handle = Chandle
+        # source = ps3000A_channel_A = 0
+        # Buffer max = ctypes.byref(bufferAMax)
+        # Buffer min = ctypes.byref(bufferAMin)
+        # Buffer length = maxsamples
+        # Segment index = 0
+        # Ratio mode = ps3000A_Ratio_Mode_None = 0
+        status["SetDataBuffers"] = ps.ps3000aSetDataBuffers(self._chandle, 0, bufferAMax.ctypes.data, bufferAMin.ctypes.data,
+                                                            maxsamples, 0, 0)
+        assert_pico_ok(status["SetDataBuffers"])
+
+        # Create buffers ready for assigning pointers for data collection
+        bufferAMax1 = np.empty(maxsamples, dtype=np.dtype('int16'))
+        bufferAMin1 = np.empty(maxsamples, dtype=np.dtype(
+            'int16'))  # used for downsampling which isn't in the scope of this example
+
+        # Setting the data buffer location for data collection from channel A
+        # Handle = Chandle
+        # source = ps3000A_channel_A = 0
+        # Buffer max = ctypes.byref(bufferAMax1)
+        # Buffer min = ctypes.byref(bufferAMin1)
+        # Buffer length = maxsamples
+        # Segment index = 1
+        # Ratio mode = ps3000A_Ratio_Mode_None = 0
+        status["SetDataBuffers"] = ps.ps3000aSetDataBuffers(self._chandle, 0, bufferAMax1.ctypes.data,
+                                                            bufferAMin1.ctypes.data, maxsamples, 1, 0)
+        assert_pico_ok(status["SetDataBuffers"])
+
+        # Create buffers ready for assigning pointers for data collection
+        bufferAMax2 = np.empty(maxsamples, dtype=np.dtype('int16'))
+        bufferAMin2 = np.empty(maxsamples, dtype=np.dtype(
+            'int16'))  # used for downsampling which isn't in the scope of this example
+
+        # Setting the data buffer location for data collection from channel A
+        # Handle = Chandle
+        # source = ps3000A_channel_A = 0
+        # Buffer max = ctypes.byref(bufferAMax)
+        # Buffer min = ctypes.byref(bufferAMin)
+        # Buffer length = maxsamples
+        # Segment index = 2
+        # Ratio mode = ps3000A_Ratio_Mode_None = 0
+        status["SetDataBuffers"] = ps.ps3000aSetDataBuffers(self._chandle, 0, bufferAMax2.ctypes.data,
+                                                            bufferAMin2.ctypes.data, maxsamples, 2, 0)
+        assert_pico_ok(status["SetDataBuffers"])
+
+        # Create buffers ready for assigning pointers for data collection
+        bufferAMax3 = np.empty(maxsamples, dtype=np.dtype('int16'))
+        bufferAMin3 = np.empty(maxsamples, dtype=np.dtype(
+            'int16'))  # used for downsampling which isn't in the scope of this example
+
+        # Setting the data buffer location for data collection from channel A
+        # Handle = Chandle
+        # source = ps3000A_channel_A = 0
+        # Buffer max = ctypes.byref(bufferAMax)
+        # Buffer min = ctypes.byref(bufferAMin)
+        # Buffer length = maxsamples
+        # Segment index = 3
+        # Ratio mode = ps3000A_Ratio_Mode_None = 0
+        status["SetDataBuffers"] = ps.ps3000aSetDataBuffers(self._chandle, 0, bufferAMax3.ctypes.data,
+                                                            bufferAMin3.ctypes.data, maxsamples, 3, 0)
+        assert_pico_ok(status["SetDataBuffers"])
+
+        # Create buffers ready for assigning pointers for data collection
+        bufferAMax4 = np.empty(maxsamples, dtype=np.dtype('int16'))
+        bufferAMin4 = np.empty(maxsamples, dtype=np.dtype(
+            'int16'))  # used for downsampling which isn't in the scope of this example
+
+        # Setting the data buffer location for data collection from channel A
+        # Handle = Chandle
+        # source = ps3000A_channel_A = 0
+        # Buffer max = ctypes.byref(bufferAMax)
+        # Buffer min = ctypes.byref(bufferAMin)
+        # Buffer length = maxsamples
+        # Segment index = 4
+        # Ratio mode = ps3000A_Ratio_Mode_None = 0
+        status["SetDataBuffers"] = ps.ps3000aSetDataBuffers(self._chandle, 0, bufferAMax4.ctypes.data,
+                                                            bufferAMin4.ctypes.data, maxsamples, 4, 0)
+        assert_pico_ok(status["SetDataBuffers"])
+
+        # Create buffers ready for assigning pointers for data collection
+        bufferAMax5 = np.empty(maxsamples, dtype=np.dtype('int16'))
+        bufferAMin5 = np.empty(maxsamples, dtype=np.dtype(
+            'int16'))  # used for downsampling which isn't in the scope of this example
+
+        # Setting the data buffer location for data collection from channel A
+        # Handle = Chandle
+        # source = ps3000A_channel_A = 0
+        # Buffer max = ctypes.byref(bufferAMax)
+        # Buffer min = ctypes.byref(bufferAMin)
+        # Buffer length = maxsamples
+        # Segment index = 5
+        # Ratio mode = ps3000A_Ratio_Mode_None = 0
+        status["SetDataBuffers"] = ps.ps3000aSetDataBuffers(self._chandle, 0, bufferAMax5.ctypes.data,
+                                                            bufferAMin5.ctypes.data, maxsamples, 5, 0)
+        assert_pico_ok(status["SetDataBuffers"])
+
+        # Create buffers ready for assigning pointers for data collection
+        bufferAMax6 = np.empty(maxsamples, dtype=np.dtype('int16'))
+        bufferAMin6 = np.empty(maxsamples, dtype=np.dtype(
+            'int16'))  # used for downsampling which isn't in the scope of this example
+
+        # Setting the data buffer location for data collection from channel A
+        # Handle = Chandle
+        # source = ps3000A_channel_A = 0
+        # Buffer max = ctypes.byref(bufferAMax)
+        # Buffer min = ctypes.byref(bufferAMin)
+        # Buffer length = maxsamples
+        # Segment index = 6
+        # Ratio mode = ps3000A_Ratio_Mode_None = 0
+        status["SetDataBuffers"] = ps.ps3000aSetDataBuffers(self._chandle, 0, bufferAMax6.ctypes.data,
+                                                            bufferAMin6.ctypes.data, maxsamples, 6, 0)
+        assert_pico_ok(status["SetDataBuffers"])
+
+        # Create buffers ready for assigning pointers for data collection
+        bufferAMax7 = np.empty(maxsamples, dtype=np.dtype('int16'))
+        bufferAMin7 = np.empty(maxsamples, dtype=np.dtype(
+            'int16'))  # used for downsampling which isn't in the scope of this example
+
+        # Setting the data buffer location for data collection from channel A
+        # Handle = Chandle
+        # source = ps3000A_channel_A = 0
+        # Buffer max = ctypes.byref(bufferAMax)
+        # Buffer min = ctypes.byref(bufferAMin)
+        # Buffer length = maxsamples
+        # Segment index = 7
+        # Ratio mode = ps3000A_Ratio_Mode_None = 0
+        status["SetDataBuffers"] = ps.ps3000aSetDataBuffers(self._chandle, 0, bufferAMax7.ctypes.data,
+                                                            bufferAMin7.ctypes.data, maxsamples, 7, 0)
+        assert_pico_ok(status["SetDataBuffers"])
+
+        # Create buffers ready for assigning pointers for data collection
+        bufferAMax8 = np.empty(maxsamples, dtype=np.dtype('int16'))
+        bufferAMin8 = np.empty(maxsamples, dtype=np.dtype(
+            'int16'))  # used for downsampling which isn't in the scope of this example
+
+        # Setting the data buffer location for data collection from channel A
+        # Handle = Chandle
+        # source = ps3000A_channel_A = 0
+        # Buffer max = ctypes.byref(bufferAMax)
+        # Buffer min = ctypes.byref(bufferAMin)
+        # Buffer length = maxsamples
+        # Segment index = 8
+        # Ratio mode = ps3000A_Ratio_Mode_None = 0
+        status["SetDataBuffers"] = ps.ps3000aSetDataBuffers(self._chandle, 0, bufferAMax8.ctypes.data,
+                                                            bufferAMin8.ctypes.data, maxsamples, 8, 0)
+        assert_pico_ok(status["SetDataBuffers"])
+
+        # Create buffers ready for assigning pointers for data collection
+        bufferAMax9 = np.empty(maxsamples, dtype=np.dtype('int16'))
+        bufferAMin9 = np.empty(maxsamples, dtype=np.dtype(
+            'int16'))  # used for downsampling which isn't in the scope of this example
+
+        # Setting the data buffer location for data collection from channel A
+        # Handle = Chandle
+        # source = ps3000A_channel_A = 0
+        # Buffer max = ctypes.byref(bufferAMax)
+        # Buffer min = ctypes.byref(bufferAMin)
+        # Buffer length = maxsamples
+        # Segment index = 9
+        # Ratio mode = ps3000A_Ratio_Mode_None = 0
+        status["SetDataBuffers"] = ps.ps3000aSetDataBuffers(self._chandle, 0, bufferAMax9.ctypes.data,
+                                                            bufferAMin9.ctypes.data, maxsamples, 9, 0)
+        assert_pico_ok(status["SetDataBuffers"])
+
+        # Creates a overlow location for data
+        overflow = (ctypes.c_int16 * 10)()
+        # Creates converted types maxsamples
+        cmaxSamples = ctypes.c_int32(maxsamples)
+
+        # Checks data collection to finish the capture
+        ready = ctypes.c_int16(0)
+        check = ctypes.c_int16(0)
+        while ready.value == check.value:
+            status["isReady"] = ps.ps3000aIsReady(self._chandle, ctypes.byref(ready))
+
+        # Handle = self._chandle
+        # noOfSamples = ctypes.byref(cmaxSamples)
+        # fromSegmentIndex = 0
+        # ToSegmentIndex = 9
+        # DownSampleRatio = 0
+        # DownSampleRatioMode = 0
+        # Overflow = ctypes.byref(overflow)
+
+        status["GetValuesBulk"] = ps.ps3000aGetValuesBulk(self._chandle, ctypes.byref(cmaxSamples), 0, 9, 1, 0,
+                                                          ctypes.byref(overflow))
+        assert_pico_ok(status["GetValuesBulk"])
+
+        # Handle = self._chandle
+        # Times = Times = (ctypes.c_int16*10)() = ctypes.byref(Times)
+        # Timeunits = TimeUnits = ctypes.c_char() = ctypes.byref(TimeUnits)
+        # Fromsegmentindex = 0
+        # Tosegementindex = 9
+        Times = (ctypes.c_int16 * 10)()
+        TimeUnits = ctypes.c_char()
+        status["GetValuesTriggerTimeOffsetBulk"] = ps.ps3000aGetValuesTriggerTimeOffsetBulk64(self._chandle,
+                                                                                              ctypes.byref(Times),
+                                                                                              ctypes.byref(TimeUnits),
+                                                                                              0, 9)
+        assert_pico_ok(status["GetValuesTriggerTimeOffsetBulk"])
+
+        # Finds the max ADC count
+        # Handle = self._chandle
+        # Value = ctype.byref(maxADC)
+        maxADC = ctypes.c_int16()
+        status["maximumValue"] = ps.ps3000aMaximumValue(self._chandle, ctypes.byref(maxADC))
+        assert_pico_ok(status["maximumValue"])
+
+        # Converts ADC from channel A to mV
+        adc2mVChAMax = adc2mV(bufferAMax, chARange, maxADC)
+        adc2mVChAMax1 = adc2mV(bufferAMax1, chARange, maxADC)
+        adc2mVChAMax2 = adc2mV(bufferAMax2, chARange, maxADC)
+        adc2mVChAMax3 = adc2mV(bufferAMax3, chARange, maxADC)
+        adc2mVChAMax4 = adc2mV(bufferAMax4, chARange, maxADC)
+        adc2mVChAMax5 = adc2mV(bufferAMax5, chARange, maxADC)
+        adc2mVChAMax6 = adc2mV(bufferAMax6, chARange, maxADC)
+        adc2mVChAMax7 = adc2mV(bufferAMax7, chARange, maxADC)
+        adc2mVChAMax8 = adc2mV(bufferAMax8, chARange, maxADC)
+        adc2mVChAMax9 = adc2mV(bufferAMax9, chARange, maxADC)
+
+        # Creates the time data
+        time = np.linspace(0, (cmaxSamples.value) * timeIntervalns.value, cmaxSamples.value)
+
+        # Plots the data from channel A onto a graph
+        plt.plot(time, adc2mVChAMax[:])
+        plt.plot(time, adc2mVChAMax1[:])
+        plt.plot(time, adc2mVChAMax2[:])
+        plt.plot(time, adc2mVChAMax3[:])
+        plt.plot(time, adc2mVChAMax4[:])
+        plt.plot(time, adc2mVChAMax5[:])
+        plt.plot(time, adc2mVChAMax6[:])
+        plt.plot(time, adc2mVChAMax7[:])
+        plt.plot(time, adc2mVChAMax8[:])
+        plt.plot(time, adc2mVChAMax9[:])
+        plt.xlabel('Time (ns)')
+        plt.ylabel('Voltage (mV)')
+        plt.show()
+
+        # Stops the scope
+        # Handle = self._chandle
+        status["stop"] = ps.ps3000aStop(self._chandle)
+        assert_pico_ok(status["stop"])
+
+        # Displays the staus returns
+        print(status)
+
+    def acquisition_old(self):
+
         samples = 10
         pre_trigger_points = 40000
         points_per_trace = 40000
@@ -469,7 +886,7 @@ class PicoScope(Instrument):
         total_points_per_trace = pre_trigger_points + points_per_trace
         ctotal_points_per_trace = ctypes.c_int32(total_points_per_trace)  # C type
 
-        self.setup_trigger()
+        # self.setup_trigger()
 
         # Gets timebase information
         # Handle = chandle
