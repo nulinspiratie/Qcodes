@@ -5,6 +5,7 @@ import os
 import time
 from IPython.display import display
 from ipywidgets.widgets import *
+from datetime import datetime
 from traitlets import Unicode, Bool
 
 import qcodes as qc
@@ -45,6 +46,8 @@ class LoopManagerWidget(DOMWidget):
         widgets["active_measurement_label"] = Label(value="No active measurement")
         widgets["action_label"] = Label("")
         widgets["loop_indices_label"] = Label("")
+        widgets["estimated_completion_time"] = Label("")
+        widgets["remaining_time"] = Label("")
 
         if self.layout:
             widgets["layout_button"] = ToggleButton(
@@ -108,11 +111,12 @@ class LoopManagerWidget(DOMWidget):
         self.widgets["stop_button"].disabled = True
 
     def pause_measurement(self, *args, **kwargs):
-        if qc.active_measurement().is_paused:
-            qc.active_measurement().resume()
+        active_measurement = qc.active_measurement()
+        if active_measurement.is_paused:
+            active_measurement.resume()
             self.widgets["pause_button"].icon = "play"
         else:
-            qc.active_measurement().pause()
+            active_measurement.pause()
             self.widgets["pause_button"].icon = "pause"
 
     def force_stop_measurement(self, *args, **kwargs):
@@ -171,34 +175,53 @@ class LoopManagerWidget(DOMWidget):
         # Clear any error messages that mess up the sidebar
         sys.stdout.flush()
 
-        if not qc.active_measurement() or qc.active_dataset() is None:
+        active_measurement = qc.active_measurement()
+        active_dataset = qc.active_dataset()
+
+        if not active_measurement or active_dataset is None:
             self.widgets["active_measurement_label"].value = "No active measurement"
             self.widgets["pause_button"].icon = "pause"
             self.widgets["loop_indices_label"].value = ""
+            self.widgets["estimated_completion_time"].value = ""
+            self.widgets["remaining_time"].value = ""
             self.widgets["action_label"].value = ""
             self.widgets["notify_checkbox"].value = False
         else:
             # Add active dataset name
-            dataset_location = f"Active msmt: {qc.active_dataset().location}"
+            dataset_location = f"Active msmt: {active_dataset.location}"
             dataset_name = os.path.split(dataset_location)[-1]
             self.widgets["active_measurement_label"].value = dataset_name
 
             # Update active action
-            action_indices = qc.active_measurement().action_indices
-            active_action = qc.active_measurement().active_action_name
+            action_indices = active_measurement.action_indices
+            active_action = active_measurement.active_action_name
             self.widgets[
                 "action_label"
             ].value = f"Action {str(action_indices):<9} {active_action}"
 
             # Update loop indices
-            loop_indices = qc.active_measurement().loop_indices
-            loop_shape = qc.active_measurement().loop_shape
+            loop_indices = active_measurement.loop_indices
+            loop_shape = active_measurement.loop_shape
             self.widgets[
                 "loop_indices_label"
             ].value = f"Loop {loop_indices} of {loop_shape}"
 
+            start_time = datetime.strptime(active_dataset.metadata['t_start'], '%Y-%m-%d %H:%M:%S')
+            time_elapsed = datetime.now() - start_time
+            remaining_time = time_elapsed * (1/(active_dataset.fraction_complete() + 1e-6) - 1)
+            estimated_finish_time = start_time + time_elapsed + remaining_time
+            self.widgets[
+                "estimated_completion_time"
+            ].value = f"Estimated completion time: {datetime.strftime(estimated_finish_time, '%Y-%m-%d %H:%M')}"
+            remaining_hours = remaining_time.total_seconds() // 3600
+            remaining_minutes = remaining_time.total_seconds() // 60
+            remaining_minutes -= 60 * remaining_hours
+            self.widgets["remaining_time"].value = (
+                f"Remaining time: {remaining_hours} hours {remaining_minutes:.1f} minutes"
+            )
+
             # Update notification checkbox
-            notify_value = getattr(qc.active_measurement(), 'notify', False)
+            notify_value = getattr(active_measurement, 'notify', False)
             self.widgets["notify_checkbox"].value = notify_value
 
         # update layout button
