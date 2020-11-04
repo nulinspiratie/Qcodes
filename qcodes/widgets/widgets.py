@@ -213,10 +213,12 @@ class LoopManagerWidget(DOMWidget):
             self.widgets[
                 "estimated_completion_time"
             ].value = f"Estimated completion time: {datetime.strftime(estimated_finish_time, '%Y-%m-%d %H:%M')}"
-            self.widgets[
-                "remaining_time"
-            ].value = f"Remaining time: {int(remaining_time.total_seconds() / 3600)} hours, " \
-                      f"{remaining_time.total_seconds() / 60:.1f} minutes"
+            remaining_hours = remaining_time.total_seconds() // 3600
+            remaining_minutes = remaining_time.total_seconds() // 60
+            remaining_minutes -= 60 * remaining_hours
+            self.widgets["remaining_time"].value = (
+                f"Remaining time: {remaining_hours} hours {remaining_minutes:.1f} minutes"
+            )
 
             # Update notification checkbox
             notify_value = getattr(active_measurement, 'notify', False)
