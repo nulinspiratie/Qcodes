@@ -523,6 +523,8 @@ class SD_AWG(SD_Module):
             reset_multiple_channel_phase(5) would reset the phase of channel 0 and 2
         """
         # AWG channel mask, where LSB is for ch0, bit 1 is for ch1 etc.
+        if not self.zero_based_channels:
+            channels = [channel - 1 for channel in channels]
         channel_mask = sum(2**channel for channel in channels)
         return self.awg.channelPhaseResetMultiple(channel_mask)
 
