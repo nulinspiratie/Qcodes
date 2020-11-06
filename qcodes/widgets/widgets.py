@@ -206,19 +206,20 @@ class LoopManagerWidget(DOMWidget):
                 "loop_indices_label"
             ].value = f"Loop {loop_indices} of {loop_shape}"
 
-            start_time = datetime.strptime(active_dataset.metadata['t_start'], '%Y-%m-%d %H:%M:%S')
-            time_elapsed = datetime.now() - start_time
-            remaining_time = time_elapsed * (1/(active_dataset.fraction_complete() + 1e-6) - 1)
-            estimated_finish_time = start_time + time_elapsed + remaining_time
-            self.widgets[
-                "estimated_completion_time"
-            ].value = f"Estimated completion time: {datetime.strftime(estimated_finish_time, '%Y-%m-%d %H:%M')}"
-            remaining_hours = remaining_time.total_seconds() // 3600
-            remaining_minutes = remaining_time.total_seconds() // 60
-            remaining_minutes -= 60 * remaining_hours
-            self.widgets["remaining_time"].value = (
-                f"Remaining time: {remaining_hours} hours {remaining_minutes:.1f} minutes"
-            )
+            if hasattr(active_dataset, 'metadata') and 't_start' in active_dataset.metadata:
+                start_time = datetime.strptime(active_dataset.metadata['t_start'], '%Y-%m-%d %H:%M:%S')
+                time_elapsed = datetime.now() - start_time
+                remaining_time = time_elapsed * (1/(active_dataset.fraction_complete() + 1e-6) - 1)
+                estimated_finish_time = start_time + time_elapsed + remaining_time
+                self.widgets[
+                    "estimated_completion_time"
+                ].value = f"Estimated completion time: {datetime.strftime(estimated_finish_time, '%Y-%m-%d %H:%M')}"
+                remaining_hours = remaining_time.total_seconds() // 3600
+                remaining_minutes = remaining_time.total_seconds() // 60
+                remaining_minutes -= 60 * remaining_hours
+                self.widgets["remaining_time"].value = (
+                    f"Remaining time: {remaining_hours} hours {remaining_minutes:.1f} minutes"
+                )
 
             # Update notification checkbox
             notify_value = getattr(active_measurement, 'notify', False)
