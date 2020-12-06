@@ -45,6 +45,42 @@ def align_y_axis(ax, ax_target):
     ax.set_position([posn_old.x0, posn_target.y0, posn_old.width, posn_target.height])
 
 
+def add_2D_traces(
+        self,
+        z,
+        clim=None,
+):
+    if clim is None:
+        clim = np.nanmin(z), np.nanmax(z)
+
+    if isinstance(z, DataArray):
+        y_vals = z.set_arrays[0]
+    else:
+        y_vals = np.arange(len(z))
+    y_diff_vals = np.diff(y_vals)
+    y_diff_vals = np.append(y_diff_vals, y_diff_vals[-1])
+
+    for k, row in enumerate(z):
+        if all(np.isnan(row)):
+            continue
+
+        # Determine x and y values for each row
+        x = row.set_arrays[0]
+        x = np.append(x - np.diff(x)[0] / 2, x[-1] + np.diff(x)[0] / 2)
+        # The two y values are the sweep value +- half the difference to next sweep value
+        y_diff = next(elem for elem in y_diff_vals[k::-1] if not np.isnan(elem))
+        y = [y_vals[k] - y_diff / 2, y_vals[k] + y_diff / 2]
+
+        x[np.isnan(x)] = np.nanmax(x)
+        y = masked_invalid(y)
+        row = masked_invalid(row[np.newaxis, :])
+
+        # Plot row
+        mesh = self.pcolormesh(x, y, row, clim=clim)
+
+    fig = self.get_figure()
+    self.colorbar = self.qcodes_colorbar = fig.colorbar(mesh, ax=self)
+
 def set_zscale(self, scale: str):
     """Set the qcodes_colorbar scaling
 
@@ -224,6 +260,7 @@ class MatPlot(BasePlot):
             subplot.add = partial(self.add, subplot=k + 1)
             subplot.align_x_axis = partial(align_x_axis, subplot)
             subplot.align_y_axis = partial(align_y_axis, subplot)
+            subplot.add_2D_traces = partial(add_2D_traces, subplot)
 
         self.title = self.fig.suptitle('')
 
