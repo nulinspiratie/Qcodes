@@ -155,6 +155,11 @@ class MatPlot(BasePlot):
             specifies the index of the matplotlib figure window to use. If None
             then open a new window
 
+        remove_empty_subplots: boolean
+            If True, after creating a figure with subplots, any subplots that
+            are empty are removed. This is not recommended for interactive data
+            viewing, but might be desirable to remove visual clutter.
+
         **kwargs: passed along to MatPlot.add() to add the first data trace
     """
 
@@ -164,7 +169,7 @@ class MatPlot(BasePlot):
 
     def __init__(self, *args, figsize=None, interval=1, subplots=None, num=None,
                  colorbar=True, sharex=False, sharey=False, gridspec_kw=None,
-                 actions=[], **kwargs):
+                 actions=[], remove_empty_subplots=False, **kwargs):
         super().__init__(interval)
 
         if subplots is None:
@@ -187,6 +192,11 @@ class MatPlot(BasePlot):
                 self[k].add(arg, colorbar=colorbar, **kwargs)
         if args:
             self.rescale_axis()
+
+        if remove_empty_subplots:
+            for ax in self:
+                if not ax.collections and not ax.lines:
+                    ax.remove()
 
         self.tight_layout()
         if any(any(map(_is_active_data_array, arg))
