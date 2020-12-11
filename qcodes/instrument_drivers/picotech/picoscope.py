@@ -299,16 +299,18 @@ class PicoScope(Instrument):
 
     def close(self):
         status = {}
-        # Stops the scope data acquisition
-        # Handle = chandle
-        status["stop"] = ps.ps3000aStop(self._chandle)
-        assert_pico_ok(status["stop"])
+        self.stop()
 
         # Closes the unit
         # Handle = chandle
         status["close"] = ps.ps3000aCloseUnit(self._chandle)
         assert_pico_ok(status["close"])
         super().close()
+
+    def stop(self):
+        status = {}
+        status["stop"] = ps.ps3000aStop(self._chandle)
+        assert_pico_ok(status["stop"])
 
     def add_parameter(self, name: str, parameter_class: type = PicoParameter, **kwargs):
         """Use PicoParameter by default"""
@@ -357,22 +359,94 @@ class PicoScope(Instrument):
             status[ch.name] = PICO_STATUS_LOOKUP[channel_status]
         return status
 
+    def initialize_buffers(self):
+        """Initializes buffers (number of buffers and buffer size)"""
+        # Create buffers ready for assigning pointers for data collection
+        self._raw_buffers = {
+            ch.id: np.zeros(shape=(self.samples(), self.points_per_trace()), dtype=np.int16)
+            for ch in self.active_channels
+        }
+
+    def post_buffers(self):
+        """Send buffer locations to the picoscope ready for data transfer"""
+        status = {}
+        for ch in self.channels:
+            status[ch.name] = {}
+            for i in range(self.samples()):
+            # for single_buffer in self._raw_buffers[ch.id]:
+                buffer_status = ps.ps3000aSetDataBuffers(
+                    self._chandle,
+                    ps.PS3000A_CHANNEL[f"PS3000A_CHANNEL_{ch.id}"],
+                    self._raw_buffers[ch.id][i].ctypes.data,
+                    None,
+                    self.points_per_trace(),
+                    i,
+                    ps.PS3000A_RATIO_MODE["PS3000A_RATIO_MODE_NONE"],
+                )
+                assert_pico_ok(buffer_status)
+                status[ch.name][f'buffer[{i}]'] = PICO_STATUS_LOOKUP[buffer_status], self._raw_buffers[ch.id][i].ctypes.data
+            # status[ch.name] = PICO_STATUS_LOOKUP[channel_status]
+        return status
+
+    def setup_block_capture(self):
+        status = {}
+        preTriggerSamples = self.points_per_trace()//2
+        postTriggerSamples = self.points_per_trace() - preTriggerSamples
+
+        timebase = 2 # 4 ns?
+
+        timeIntervalns = ctypes.c_float()
+        returnedMaxSamples = ctypes.c_int32() # in the example given this is a short, but it should be a long
+        status["GetTimebase"] = ps.ps3000aGetTimebase2(self._chandle, timebase, self.points_per_trace(), ctypes.byref(timeIntervalns), 1, ctypes.byref(returnedMaxSamples), 0)
+        assert_pico_ok(status["GetTimebase"])
+        status["timeIntervalns"] = timeIntervalns
+        status["returnedMaxSamples"] = returnedMaxSamples
+
+        cmaxSamples = ctypes.c_int32(self.points_per_trace())
+        status["MemorySegments"] = ps.ps3000aMemorySegments(self._chandle, self.samples(), ctypes.byref(cmaxSamples))
+        assert_pico_ok(status["MemorySegments"])
+        status["cmaxSamples"] = cmaxSamples
+
+        # sets number of captures
+        status["SetNoOfCaptures"] = ps.ps3000aSetNoOfCaptures(self._chandle, self.samples())
+        assert_pico_ok(status["SetNoOfCaptures"])
+
+        status["runblock"] = ps.ps3000aRunBlock(self._chandle, preTriggerSamples, postTriggerSamples, timebase,
+                                                1, None, 0, None, None)
+        assert_pico_ok(status["runblock"])
+        return status
+
+    def get_blocks(self):
+        status = {}
+
+        ready = ctypes.c_int16(0)
+        print("Waiting for acquisition to finish...")
+        while not ready:
+            status["isReady"] = ps.ps3000aIsReady(self._chandle, ctypes.byref(ready))
+
+        print("Acqusition complete.")
+        # Creates a overlow location for data
+        overflow = (ctypes.c_int16 * self.samples())()
+        # Creates converted types maxsamples
+        cmaxSamples = ctypes.c_int32(self.points_per_trace())
+        print("Getting bulk values.")
+        status["GetValuesBulk"] = ps.ps3000aGetValuesBulk(self._chandle, ctypes.byref(cmaxSamples), 0, self.samples()-1, 1, 0, ctypes.byref(overflow))
+        assert_pico_ok(status["GetValuesBulk"])
+        print(status["GetValuesBulk"])
+
+
+        Times = (ctypes.c_int16*self.samples())()
+        TimeUnits = ctypes.c_char()
+        status["GetValuesTriggerTimeOffsetBulk"] = ps.ps3000aGetValuesTriggerTimeOffsetBulk64(self._chandle, ctypes.byref(Times), ctypes.byref(TimeUnits), 0, self.samples()-1)
+        assert_pico_ok(status["GetValuesTriggerTimeOffsetBulk"])
+        return status
+
+
     def setup_buffers(self, num_buffers, buffer_size, memory_segment=0):
         """Initializes buffers (number of buffers and buffer size)"""
         status = {}
 
         totalSamples = buffer_size * num_buffers
-
-        # Create buffers ready for assigning pointers for data collection
-        self._raw_buffers = {
-            ch.id: np.zeros(shape=totalSamples, dtype=np.int16)
-            for ch in self.active_channels
-        }
-        self._raw_single_buffers = {
-            ch.id: np.zeros(shape=buffer_size, dtype=np.int16)
-            for ch in self.active_channels
-        }
-        self.buffers = {}
 
         # Set data buffer location for data collection
         # handle = chandle
@@ -406,8 +480,14 @@ class PicoScope(Instrument):
         trigger_channel_id = self.trigger_channel()
         if len(trigger_channel_id) == 1:
             trigger_channel = self.channels[f'ch{trigger_channel_id}']
-        threshold_adc = adc2mV(self.trigger_threshold(), trigger_channel.range.raw_value, maxADC, inverse=True)
-        logger.debug(f'Trigger threshold adc: {threshold_adc}')
+
+            threshold_adc = adc2mV(self.trigger_threshold(), trigger_channel.range.raw_value, maxADC, inverse=True)
+            logger.debug(f'Trigger threshold adc: {threshold_adc}')
+        else: # external trigger
+            # The external trigger range is always fixed to +- 5 V
+            # https://www.picotech.com/support/viewtopic.php?t=36471
+            threshold_adc = adc2mV(self.trigger_threshold(), ps.PS3000A_RANGE["PS3000A_5V"], maxADC, inverse=True)
+            logger.debug(f'Trigger threshold adc: {threshold_adc}')
 
         # Sets up simple trigger
         # Handle = Chandle
@@ -428,6 +508,17 @@ class PicoScope(Instrument):
         )
         assert_pico_ok(trigger_status)
 
+    # def begin_block_capture(self):
+    #     status = {}
+    #     totalSamples = self.samples() * self.points_per_trace()
+    #     preTriggerSamples = self.points_per_trace()//2
+    #     postTriggerSamples = self.points_per_trace() - preTriggerSamples
+    #     timebase = 2 # 4 ns?
+    #
+    #     with self.timings.record('start_block_capture'):
+    #         status["runblock"] = ps.ps3000aRunBlock(self._chandle, preTriggerSamples, postTriggerSamples, timebase,
+    #                                                 1, None, 0, None, None)
+    #     assert_pico_ok(status["runblock"])
 
     streaming_info = {}
     def begin_streaming(self):
