@@ -652,25 +652,6 @@ class Measurement:
                     label=multi_parameter.labels[k],
                     unit=multi_parameter.units[k],
                 )
-        # original_action_indices = self.action_indices
-        # # This section of code effectively adds a new Measurement context, with
-        # # a unique action index for each result from the multi parameter.
-        # original_action_indices = self.action_indices
-        # for k, (key, val) in enumerate(results.items()):
-        #     self.action_indices = original_action_indices + (k,)
-        #     self._verify_action(action=None, name=key, add_if_new=True)
-        #     self._add_measurement_result(
-        #         self.action_indices,
-        #         val,
-        #         parameter=multi_parameter,
-        #         name=key,
-        #         label=multi_parameter.labels[k],
-        #         unit=multi_parameter.units[k],
-        #     )
-        # # Advance action indices by 1
-        # action_indices = list(original_action_indices)
-        # action_indices[-1] += 1
-        # self.action_indices = tuple(action_indices)
 
         return results
 
@@ -739,7 +720,11 @@ class Measurement:
         return value
 
     def _measure_value(self, value, name, parameter=None, label=None, unit=None):
-        """Store a single value (float/int/bool)"""
+        """Store a single value (float/int/bool)
+
+        If this value comes from another parameter acquisition, e.g. from a
+        MultiParameter, the parameter can be passed to use the right set arrays.
+        """
         if name is None:
             raise RuntimeError("Must provide a name when measuring a value")
 
