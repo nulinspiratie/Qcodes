@@ -420,11 +420,10 @@ class Measurement:
                 label = None
                 unit = None
                 if parameter is not None and hasattr(parameter, 'setpoints'):
-                    for kk in range(len(parameter.names)):
-                        if parameter.names[kk] == name:
-                            arr = parameter.setpoints[kk][k]
-                            label = parameter.setpoint_labels[kk][k]
-                            unit = parameter.setpoint_units[kk][k]
+                    arr_idx = parameter.names.index(name)
+                    arr = parameter.setpoints[arr_idx][k]
+                    label = parameter.setpoint_labels[arr_idx][k]
+                    unit = parameter.setpoint_units[arr_idx][k]
     
                 # Add singleton dimensions
                 arr = np.broadcast_to(arr, result.shape[: k + 1])
@@ -562,9 +561,8 @@ class Measurement:
                 # Successive set arrays must increase dimensionality by unity
                 arr = np.arange(result.shape[k])
                 if parameter is not None and hasattr(parameter, 'setpoints'):
-                    for kk in range(len(parameter.names)):
-                        if parameter.names[kk] == name:
-                            arr = parameter.setpoints[kk][k]
+                    arr_idx = parameter.names.index(name)
+                    arr = parameter.setpoints[arr_idx][k]
 
                 # Add singleton dimensions
                 arr = np.broadcast_to(arr, result.shape[: k + 1])
