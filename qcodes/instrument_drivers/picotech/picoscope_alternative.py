@@ -330,7 +330,7 @@ class PicoScope(Instrument, ps.PS3000a):
         self.trigger_delay = Parameter(set_cmd=None, initial_value=0, unit='s')
         self.autotrigger_ms = Parameter(set_cmd=None, initial_value=0, unit='ms',
                                         docstring='milliseconds to wait after trigger. 0 means wait indefinitely')
-
+        self.buffer_actions = []
         self.timings = PerformanceTimer()
 
     @property
@@ -390,7 +390,6 @@ class PicoScope(Instrument, ps.PS3000a):
 
         for ch in self.active_channels:
             self.getDataRawBulk(ch.id, data=self._raw_buffers[ch.id])
-            self.buffers[ch.id] = self.rawToV(ch.id, self._raw_buffers[ch.id])
 
     def setup_trigger(self):
         trigger_channel_id = self.trigger_channel()
@@ -410,6 +409,8 @@ class PicoScope(Instrument, ps.PS3000a):
             else:
                 self.buffers[ch.id] = np.reshape(self.rawToV(ch.id, self._raw_buffers[ch.id]),
                                                  newshape=(self.samples(), self.points_per_trace()))
+        for buffer_action in self.buffer_actions:
+            buffer_action(self.buffers)
 
         return self.buffers
 
