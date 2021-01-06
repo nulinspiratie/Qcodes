@@ -419,7 +419,8 @@ class Measurement:
                 arr = np.arange(shape)
                 label = None
                 unit = None
-                if parameter is not None and hasattr(parameter, 'setpoints'):
+                if parameter is not None and hasattr(parameter, 'setpoints') \
+                        and parameter.setpoints is not None:
                     arr_idx = parameter.names.index(name)
                     arr = parameter.setpoints[arr_idx][k]
                     label = parameter.setpoint_labels[arr_idx][k]
@@ -560,7 +561,8 @@ class Measurement:
             for k, set_array in enumerate(data_array.set_arrays[ndim:]):
                 # Successive set arrays must increase dimensionality by unity
                 arr = np.arange(result.shape[k])
-                if parameter is not None and hasattr(parameter, 'setpoints'):
+                if parameter is not None and hasattr(parameter, 'setpoints') \
+                        and parameter.setpoints is not None:
                     arr_idx = parameter.names.index(name)
                     arr = parameter.setpoints[arr_idx][k]
 
