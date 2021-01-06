@@ -492,11 +492,13 @@ class DataArray(DelegateAttributes):
                          preset_data=smoothed_array,
                          set_arrays=self.set_arrays)
 
-    def unroll(self, *axes):
+    def unroll(self, *axes, flatten=False):
         """ Return  a list containing all elements along an axis.
         
         If multiple axes are passed, each element in the list is again unrolled
         by the second axis, etc.
+        If flatten is True when multiple axes are passed, the unrolled elements are
+        put into a 1D list rather than nesting lists.
         """
         axis = axes[0]
         elems = self.shape[axis]
@@ -504,7 +506,13 @@ class DataArray(DelegateAttributes):
         unrolled_arr = [self[leading_indices + (elem,)] for elem in range(elems)]
 
         if len(axes) > 1:
-            unrolled_arr = [subarr.unroll(*axes[1:]) for subarr in unrolled_arr]
+            unrolled_arr = [subarr.unroll(*axes[1:], flatten=flatten) for subarr in unrolled_arr]
+
+            if flatten:
+                # For multi-axis unrolls, reduces the list dimensionality to 1D
+                # This method is likely the most efficient
+                # https://stackoverflow.com/questions/29244286/how-to-flatten-a-2d-list-to-1d-without-using-numpy
+                unrolled_arr = [j for i in unrolled_arr for j in i]
 
         return unrolled_arr
 
