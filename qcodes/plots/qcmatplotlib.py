@@ -574,8 +574,7 @@ class MatPlot(BasePlot):
             ax.locator_params(nbins=nticks)
 
         if getattr(ax, 'qcodes_colorbar', None):
-            # update_normal doesn't seem to work...
-            ax.qcodes_colorbar.update_bruteforce(pc)
+            ax.qcodes_colorbar.update_normal(pc)
         elif colorbar:
             ax.colorbar = ax.qcodes_colorbar = self.fig.colorbar(pc, ax=ax)
 
