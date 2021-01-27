@@ -1121,8 +1121,8 @@ class Sweep:
         unit: unit of sweep. Not needed if a Parameter is passed
         reverse: Sweep over sequence in opposite order.
             The data is also stored in reverse.
-        revert: Masks the state of a parameter automatically before sweeping it,
-                then restores the original value after exiting the loop.
+        restore: Stores the state of a parameter before sweeping it,
+            then restores the original value upon exiting the loop.
 
     Examples:
         ```
@@ -1134,7 +1134,7 @@ class Sweep:
             for param_val in Sweep(p.
         ```
     """
-    def __init__(self, sequence, name=None, unit=None, reverse=False, revert=False):
+    def __init__(self, sequence, name=None, unit=None, reverse=False, restore=False):
         if running_measurement() is None:
             raise RuntimeError("Cannot create a sweep outside a Measurement")
 
@@ -1150,7 +1150,7 @@ class Sweep:
         self.loop_index = None
         self.iterator = None
         self.reverse = reverse
-        self.revert = revert
+        self.restore = restore
 
         msmt = running_measurement()
         if msmt.action_indices in msmt.set_arrays:
@@ -1164,11 +1164,11 @@ class Sweep:
                 "Cannot create a Sweep while another measurement "
                 "is already running in a different thread."
             )
-        if self.revert:
+        if self.restore:
             if isinstance(self.sequence, SweepValues):
                 running_measurement().mask(self.sequence.parameter, self.sequence.parameter.get())
             else:
-                raise NotImplementedError("Unable to revert non-parameter values.")
+                raise NotImplementedError("Unable to restore non-parameter values.")
         if self.reverse:
             self.loop_index = len(self.sequence) - 1
             self.iterator = iter(self.sequence[::-1])
