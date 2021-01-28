@@ -32,6 +32,7 @@ class Oscilloscope(ParameterNode):
     # Define settings
     oscilloscope.ylim = (-0.8, 1)
     oscilloscope.channels_settings['chB']['scale'] = 10
+    oscilloscope.channels_settings['chB']['name'] = 'ESR'
     oscilloscope.channels_settings['chC']['scale'] = 50
     oscilloscope.channels_settings['chD']['scale'] = 50
     oscilloscope.update_settings()
@@ -224,7 +225,7 @@ class OscilloscopeProcess:
         self.shape_1D = shape_1D
         self.shape_2D = shape_2D
         self.queue = queue
-        self.channels = channels
+        self.current_channel_names = self.channels = channels
         self.channels_settings = channels_settings
         self.sample_rate = sample_rate
         self.ylim = ylim
@@ -262,8 +263,10 @@ class OscilloscopeProcess:
         self.ax_1D.disableAutoRange()
 
         try:
+            self.legend = self.ax_1D.addLegend()
             self.curves = [
-                self.ax_1D.plot(pen=(k, self.shape_1D[0])) for k in range(self.shape_1D[0])
+                self.ax_1D.plot(pen=(k, self.shape_1D[0]), name=self.channels[k])
+                for k in range(self.shape_1D[0])
             ]
         except:
             print(traceback.format_exc())
@@ -367,6 +370,21 @@ class OscilloscopeProcess:
                 row = arr[k]
                 curve = self.curves[k]
                 channel_settings = self.channels_settings.get(channel, {})
+
+                if channel_settings.get("name") is not None:
+                    channel_name = channel_settings["name"]
+                    if channel_name != self.current_channel_names[k]:
+                        try:
+                            # Unfortunately the legend doesn't update the labels
+                            # when you modify the curve data, and the fixes suggested
+                            # here don't work.
+                            # https://github.com/pyqtgraph/pyqtgraph/issues/1000
+                            self.legend.removeItem(self.current_channel_names[k])
+                            curve.setData(name=channel_name)
+                            self.legend.addItem(curve, channel_name)
+                            self.current_channel_names[k] = channel_name
+                        except Exception:
+                            logger.error(traceback.format_exc())
 
                 if channel_settings.get("scale") is not None:
                     row = row * channel_settings["scale"]
