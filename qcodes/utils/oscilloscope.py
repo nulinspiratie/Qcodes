@@ -17,6 +17,7 @@ TransformState = namedtuple('TransformState', 'translate scale revisit')
 
 logger = logging.getLogger(__name__)
 
+
 # https://stackoverflow.com/questions/17103698/plotting-large-arrays-in-pyqtgraph?rq=1
 
 
@@ -42,17 +43,17 @@ class Oscilloscope(ParameterNode):
     """
 
     def __init__(
-        self,
-        channels: list,
-        max_points=200000,
-        max_samples=200,
-        channels_settings=None,
-        figsize=(1200, 350),
-        sample_rate=200e3,
-        ylim=(-2, 2),
-        interval=0.1,
-        channel_plot_2D=None,
-        show_1D_from_2D: bool = False
+            self,
+            channels: list,
+            max_points=200000,
+            max_samples=200,
+            channels_settings=None,
+            figsize=(1200, 350),
+            sample_rate=200e3,
+            ylim=(-2, 2),
+            interval=0.1,
+            channel_plot_2D=None,
+            show_1D_from_2D: bool = False
     ):
         super().__init__('oscilloscope', use_as_attributes=True)
         self.max_samples = max_samples
@@ -116,8 +117,8 @@ class Oscilloscope(ParameterNode):
             cmin, cmax = value
             self._run_code(f'self.img_2D.setLevels(({cmin}, {cmax}))')
 
-    def snapshot_base(self, update: bool=False,
-                      params_to_skip_update: Sequence[str]=None,
+    def snapshot_base(self, update: bool = False,
+                      params_to_skip_update: Sequence[str] = None,
                       skip_parameters: Sequence[str] = (),
                       skip_parameter_nodes: Sequence[str] = ()):
         return {}
@@ -164,7 +165,7 @@ class Oscilloscope(ParameterNode):
 
         points = array.shape[1]
         if points > self.max_points:
-            array = array[:,:self.max_points]
+            array = array[:, :self.max_points]
             points = self.max_points
 
         # Copy new array to shared array
@@ -207,20 +208,20 @@ class OscilloscopeProcess:
     rpg = None
 
     def __init__(
-        self,
-        mp_array_1D,
-        mp_array_2D,
-        shape_1D,
-        shape_2D,
-        queue,
-        channels,
-        channels_settings,
-        figsize,
-        sample_rate,
-        ylim,
-        interval,
-        channel_plot_2D,
-        show_1D_from_2D
+            self,
+            mp_array_1D,
+            mp_array_2D,
+            shape_1D,
+            shape_2D,
+            queue,
+            channels,
+            channels_settings,
+            figsize,
+            sample_rate,
+            ylim,
+            interval,
+            channel_plot_2D,
+            show_1D_from_2D
     ):
         self.shape_1D = shape_1D
         self.shape_2D = shape_2D
@@ -249,7 +250,7 @@ class OscilloscopeProcess:
             self.ax_2D = self.win.addPlot(1, 0)
             self.img_2D = self.rpg.ImageItem()
             self.img_2D.translate(0, 0)
-            self.img_2D.scale(1/self.sample_rate*1e3, 1)
+            self.img_2D.scale(1 / self.sample_rate * 1e3, 1)
 
             self.ax_2D.getAxis('bottom').setLabel('Time', 'ms')
             self.ax_2D.getAxis('left').setLabel('Repetition', '')
@@ -434,7 +435,6 @@ class OscilloscopeProcess:
             # self.ax_2D.vb.setLimits(xMin=0, xMax=max(t_list), yMin=0, yMax=samples)
             # self.ax_2D.setRange(xRange=[5,20])
 
-
             # curve = self.curves[k]
             # channel_settings = self.channels_settings.get(channel, {})
             #
@@ -461,4 +461,3 @@ class OscilloscopeProcess:
         self.np_array_1D[:, :self.points] = sample_array
         self.update_plot_1D(points=self.points)
         self.log(f'updating 1D plot idx {sample_idx} from 2D trace')
-
