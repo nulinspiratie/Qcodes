@@ -192,10 +192,15 @@ class ParameterNode(Metadatable, DelegateAttributes, metaclass=ParameterNodeMeta
         return s
 
     def __repr__(self):
-        repr_str = f'ParameterNode {self} containing '
+        repr_str = f'ParameterNode {str(self) + " " if str(self) else ""}containing '
         if self.parameter_nodes:
-            repr_str += f'{len(self.parameter_nodes)} nodes, '
-        repr_str += f'{len(self.parameters)} parameters'
+            repr_str += f'{len(self.parameter_nodes)} node{"s" if len(self.parameter_nodes) != 1 else ""}:\n'
+            for parameter_node in self.parameter_nodes:
+                repr_str += f'\t{parameter_node}\n'
+        if self.parameters:
+            repr_str += f'{len(self.parameters)} parameter{"s" if len(self.parameters) != 1 else ""}:\n'
+            for parameter in self.parameters:
+                    repr_str += f'\t{parameter}\n'
         return repr_str
 
     def __getattr__(self, attr):
