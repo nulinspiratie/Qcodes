@@ -1210,7 +1210,7 @@ class Sweep:
             action_indices[-1] = 0
             msmt.action_indices = tuple(action_indices)
         except StopIteration:  # Reached end of iteration
-            if self.revert:
+            if self.restore:
                 if isinstance(self.sequence, SweepValues):
                     msmt.unmask(self.sequence.parameter)
                 else:
