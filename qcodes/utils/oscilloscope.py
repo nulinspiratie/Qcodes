@@ -266,7 +266,8 @@ class OscilloscopeProcess:
         try:
             self.legend = self.ax_1D.addLegend()
             self.curves = [
-                self.ax_1D.plot(pen=(k, self.shape_1D[0]), name=self.channels[k])
+                self.ax_1D.plot(pen=(k, self.shape_1D[0]),
+                                name=channels_settings[channels[k]].get("name", channels[k]))
                 for k in range(self.shape_1D[0])
             ]
         except:
