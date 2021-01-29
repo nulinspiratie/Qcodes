@@ -52,6 +52,7 @@ class Oscilloscope(ParameterNode):
             sample_rate=200e3,
             ylim=(-2, 2),
             interval=0.1,
+            show_legend=True,
             channel_plot_2D=None,
             show_1D_from_2D: bool = False
     ):
@@ -74,6 +75,7 @@ class Oscilloscope(ParameterNode):
         self.sample_rate = sample_rate
         self.ylim = ylim
         self.interval = interval
+        self.show_legend = show_legend
 
         # Create multiprocessing array for 1D traces
         self.mp_array_1D = mp.RawArray("d", int(len(channels) * max_points))
@@ -138,6 +140,7 @@ class Oscilloscope(ParameterNode):
                 sample_rate=self.sample_rate,
                 ylim=self.ylim,
                 interval=self.interval,
+                show_legend=self.show_legend,
                 channel_plot_2D=self.channel_plot_2D,
                 show_1D_from_2D=self.show_1D_from_2D
             ),
@@ -153,6 +156,7 @@ class Oscilloscope(ParameterNode):
                 "channels_settings": self.channels_settings,
                 "sample_rate": self.sample_rate,
                 "interval": self.interval,
+                "show_legend": self.show_legend,
             }
         )
 
@@ -220,22 +224,25 @@ class OscilloscopeProcess:
             sample_rate,
             ylim,
             interval,
+            show_legend,
             channel_plot_2D,
             show_1D_from_2D
     ):
         self.shape_1D = shape_1D
         self.shape_2D = shape_2D
         self.queue = queue
-        self.current_channel_names = self.channels = channels
+        self.channels = channels
         self.channels_settings = channels_settings
         self.sample_rate = sample_rate
         self.ylim = ylim
         self.interval = interval
+        self.show_legend = show_legend
         self.channel_plot_2D = channel_plot_2D
         self.show_1D_from_2D = show_1D_from_2D
 
         self.samples = None
         self.points = None
+        self.legend = None
 
         self.mp_array_1D = mp_array_1D
         self.np_array_1D = np.frombuffer(mp_array_1D, dtype=np.float64).reshape(self.shape_1D)
@@ -265,9 +272,11 @@ class OscilloscopeProcess:
 
         try:
             self.legend = self.ax_1D.addLegend()
+            self.legend.setVisible(show_legend)
             self.curves = [
                 self.ax_1D.plot(pen=(k, self.shape_1D[0]),
-                                name=channels_settings[channels[k]].get("name", channels[k]))
+                                name=channels_settings[channels[k]].get("name", channels[k])
+                                )
                 for k in range(self.shape_1D[0])
             ]
         except:
@@ -319,6 +328,7 @@ class OscilloscopeProcess:
             if self.interval - dt > 0:
                 time.sleep(self.interval - dt)
 
+
     def initialize_plot(self, figsize):
         if not self.__class__.process:
             self._init_qt()
@@ -336,11 +346,36 @@ class OscilloscopeProcess:
         logger.info("Initialized plot")
         return win
 
-    def update_settings(self, ylim, sample_rate, channels_settings, interval):
+    def update_settings(self, ylim, sample_rate, channels_settings, interval, show_legend):
         self.ylim = ylim
         self.sample_rate = sample_rate
         self.channels_settings = channels_settings
         self.interval = interval
+        self.show_legend = show_legend
+
+        # Update the legend now with current plots
+        self.legend.setVisible(self.show_legend)
+        if self.show_legend:
+            # Check if any legend names have changed and update them if so.
+            re_add = False
+            for k, channel in enumerate(self.channels):
+                curve = self.curves[k]
+                channel_settings = self.channels_settings.get(channel, {})
+                channel_name = channel_settings.get("name", channel)
+
+                # Once we find one changed name, we want to re-add each successive trace
+                # to retain the original order in the legend.
+                if channel_name != curve.name():
+                    re_add = True
+
+                if re_add:
+                    curve.setData(name=channel_name)
+                    self.ax_1D.removeItem(curve)
+                    self.ax_1D.addItem(curve)
+            if re_add and self.points is not None:
+                # If we had to re-add the plots to update the legend, then
+                # re-draw the traces.
+                self.update_plot_1D(self.points)
 
     @classmethod
     def _init_qt(cls):
@@ -372,21 +407,6 @@ class OscilloscopeProcess:
                 row = arr[k]
                 curve = self.curves[k]
                 channel_settings = self.channels_settings.get(channel, {})
-
-                if channel_settings.get("name") is not None:
-                    channel_name = channel_settings["name"]
-                    if channel_name != self.current_channel_names[k]:
-                        try:
-                            # Unfortunately the legend doesn't update the labels
-                            # when you modify the curve data, and the fixes suggested
-                            # here don't work.
-                            # https://github.com/pyqtgraph/pyqtgraph/issues/1000
-                            self.legend.removeItem(self.current_channel_names[k])
-                            curve.setData(name=channel_name)
-                            self.legend.addItem(curve, channel_name)
-                            self.current_channel_names[k] = channel_name
-                        except Exception:
-                            logger.error(traceback.format_exc())
 
                 if channel_settings.get("scale") is not None:
                     row = row * channel_settings["scale"]
