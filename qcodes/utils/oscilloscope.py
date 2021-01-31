@@ -17,6 +17,7 @@ TransformState = namedtuple('TransformState', 'translate scale revisit')
 
 logger = logging.getLogger(__name__)
 
+
 # https://stackoverflow.com/questions/17103698/plotting-large-arrays-in-pyqtgraph?rq=1
 
 
@@ -32,6 +33,7 @@ class Oscilloscope(ParameterNode):
     # Define settings
     oscilloscope.ylim = (-0.8, 1)
     oscilloscope.channels_settings['chB']['scale'] = 10
+    oscilloscope.channels_settings['chB']['name'] = 'ESR'
     oscilloscope.channels_settings['chC']['scale'] = 50
     oscilloscope.channels_settings['chD']['scale'] = 50
     oscilloscope.update_settings()
@@ -41,17 +43,18 @@ class Oscilloscope(ParameterNode):
     """
 
     def __init__(
-        self,
-        channels: list,
-        max_points=200000,
-        max_samples=200,
-        channels_settings=None,
-        figsize=(1200, 350),
-        sample_rate=200e3,
-        ylim=(-2, 2),
-        interval=0.1,
-        channel_plot_2D=None,
-        show_1D_from_2D: bool = False
+            self,
+            channels: list,
+            max_points=200000,
+            max_samples=200,
+            channels_settings=None,
+            figsize=(1200, 350),
+            sample_rate=200e3,
+            ylim=(-2, 2),
+            interval=0.1,
+            show_legend=True,
+            channel_plot_2D=None,
+            show_1D_from_2D: bool = False
     ):
         super().__init__('oscilloscope', use_as_attributes=True)
         self.max_samples = max_samples
@@ -72,6 +75,7 @@ class Oscilloscope(ParameterNode):
         self.sample_rate = sample_rate
         self.ylim = ylim
         self.interval = interval
+        self.show_legend = show_legend
 
         # Create multiprocessing array for 1D traces
         self.mp_array_1D = mp.RawArray("d", int(len(channels) * max_points))
@@ -115,8 +119,8 @@ class Oscilloscope(ParameterNode):
             cmin, cmax = value
             self._run_code(f'self.img_2D.setLevels(({cmin}, {cmax}))')
 
-    def snapshot_base(self, update: bool=False,
-                      params_to_skip_update: Sequence[str]=None,
+    def snapshot_base(self, update: bool = False,
+                      params_to_skip_update: Sequence[str] = None,
                       skip_parameters: Sequence[str] = (),
                       skip_parameter_nodes: Sequence[str] = ()):
         return {}
@@ -136,6 +140,7 @@ class Oscilloscope(ParameterNode):
                 sample_rate=self.sample_rate,
                 ylim=self.ylim,
                 interval=self.interval,
+                show_legend=self.show_legend,
                 channel_plot_2D=self.channel_plot_2D,
                 show_1D_from_2D=self.show_1D_from_2D
             ),
@@ -151,6 +156,7 @@ class Oscilloscope(ParameterNode):
                 "channels_settings": self.channels_settings,
                 "sample_rate": self.sample_rate,
                 "interval": self.interval,
+                "show_legend": self.show_legend,
             }
         )
 
@@ -163,7 +169,7 @@ class Oscilloscope(ParameterNode):
 
         points = array.shape[1]
         if points > self.max_points:
-            array = array[:,:self.max_points]
+            array = array[:, :self.max_points]
             points = self.max_points
 
         # Copy new array to shared array
@@ -206,20 +212,21 @@ class OscilloscopeProcess:
     rpg = None
 
     def __init__(
-        self,
-        mp_array_1D,
-        mp_array_2D,
-        shape_1D,
-        shape_2D,
-        queue,
-        channels,
-        channels_settings,
-        figsize,
-        sample_rate,
-        ylim,
-        interval,
-        channel_plot_2D,
-        show_1D_from_2D
+            self,
+            mp_array_1D,
+            mp_array_2D,
+            shape_1D,
+            shape_2D,
+            queue,
+            channels,
+            channels_settings,
+            figsize,
+            sample_rate,
+            ylim,
+            interval,
+            show_legend,
+            channel_plot_2D,
+            show_1D_from_2D
     ):
         self.shape_1D = shape_1D
         self.shape_2D = shape_2D
@@ -229,11 +236,13 @@ class OscilloscopeProcess:
         self.sample_rate = sample_rate
         self.ylim = ylim
         self.interval = interval
+        self.show_legend = show_legend
         self.channel_plot_2D = channel_plot_2D
         self.show_1D_from_2D = show_1D_from_2D
 
         self.samples = None
         self.points = None
+        self.legend = None
 
         self.mp_array_1D = mp_array_1D
         self.np_array_1D = np.frombuffer(mp_array_1D, dtype=np.float64).reshape(self.shape_1D)
@@ -248,7 +257,7 @@ class OscilloscopeProcess:
             self.ax_2D = self.win.addPlot(1, 0)
             self.img_2D = self.rpg.ImageItem()
             self.img_2D.translate(0, 0)
-            self.img_2D.scale(1/self.sample_rate*1e3, 1)
+            self.img_2D.scale(1 / self.sample_rate * 1e3, 1)
 
             self.ax_2D.getAxis('bottom').setLabel('Time', 'ms')
             self.ax_2D.getAxis('left').setLabel('Repetition', '')
@@ -262,8 +271,13 @@ class OscilloscopeProcess:
         self.ax_1D.disableAutoRange()
 
         try:
+            self.legend = self.ax_1D.addLegend()
+            self.legend.setVisible(show_legend)
             self.curves = [
-                self.ax_1D.plot(pen=(k, self.shape_1D[0])) for k in range(self.shape_1D[0])
+                self.ax_1D.plot(pen=(k, self.shape_1D[0]),
+                                name=channels_settings[channels[k]].get("name", channels[k])
+                                )
+                for k in range(self.shape_1D[0])
             ]
         except:
             print(traceback.format_exc())
@@ -314,6 +328,7 @@ class OscilloscopeProcess:
             if self.interval - dt > 0:
                 time.sleep(self.interval - dt)
 
+
     def initialize_plot(self, figsize):
         if not self.__class__.process:
             self._init_qt()
@@ -331,11 +346,36 @@ class OscilloscopeProcess:
         logger.info("Initialized plot")
         return win
 
-    def update_settings(self, ylim, sample_rate, channels_settings, interval):
+    def update_settings(self, ylim, sample_rate, channels_settings, interval, show_legend):
         self.ylim = ylim
         self.sample_rate = sample_rate
         self.channels_settings = channels_settings
         self.interval = interval
+        self.show_legend = show_legend
+
+        # Update the legend now with current plots
+        self.legend.setVisible(self.show_legend)
+        if self.show_legend:
+            # Check if any legend names have changed and update them if so.
+            re_add = False
+            for k, channel in enumerate(self.channels):
+                curve = self.curves[k]
+                channel_settings = self.channels_settings.get(channel, {})
+                channel_name = channel_settings.get("name", channel)
+
+                # Once we find one changed name, we want to re-add each successive trace
+                # to retain the original order in the legend.
+                if channel_name != curve.name():
+                    re_add = True
+
+                if re_add:
+                    curve.setData(name=channel_name)
+                    self.ax_1D.removeItem(curve)
+                    self.ax_1D.addItem(curve)
+            if re_add and self.points is not None:
+                # If we had to re-add the plots to update the legend, then
+                # re-draw the traces.
+                self.update_plot_1D(self.points)
 
     @classmethod
     def _init_qt(cls):
@@ -416,7 +456,6 @@ class OscilloscopeProcess:
             # self.ax_2D.vb.setLimits(xMin=0, xMax=max(t_list), yMin=0, yMax=samples)
             # self.ax_2D.setRange(xRange=[5,20])
 
-
             # curve = self.curves[k]
             # channel_settings = self.channels_settings.get(channel, {})
             #
@@ -443,4 +482,3 @@ class OscilloscopeProcess:
         self.np_array_1D[:, :self.points] = sample_array
         self.update_plot_1D(points=self.points)
         self.log(f'updating 1D plot idx {sample_idx} from 2D trace')
-
