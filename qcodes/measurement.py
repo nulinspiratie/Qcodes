@@ -377,7 +377,7 @@ class Measurement:
         # Add setpoint arrays
         if not is_setpoint:
             array_kwargs["set_arrays"] = self._add_set_arrays(
-                action_indices, result, name=(name or parameter.name)
+                action_indices, result, parameter=parameter, name=(name or parameter.name)
             )
 
         data_array = DataArray(**array_kwargs)
@@ -400,25 +400,32 @@ class Measurement:
         return data_array
 
     def _add_set_arrays(
-        self, action_indices: Tuple[int], result, name: str,
+        self, action_indices: Tuple[int], result, name: str, parameter: Union[Parameter, None] = None
     ):
         """Create set arrays for a given action index"""
         set_arrays = []
         for k in range(1, len(action_indices)):
             sweep_indices = action_indices[:k]
+    
             if sweep_indices in self.set_arrays:
                 set_arrays.append(self.set_arrays[sweep_indices])
                 # TODO handle grouped arrays (e.g. ParameterNode, nested Measurement)
-
         # Create new set array(s) if parameter result is an array or list
         if isinstance(result, (np.ndarray, list)):
             if isinstance(result, list):
                 result = np.ndarray(result)
-
-            # TODO handle if the parameter contains attribute setpoints
-
+    
             for k, shape in enumerate(result.shape):
                 arr = np.arange(shape)
+                label = None
+                unit = None
+                if parameter is not None and hasattr(parameter, 'setpoints') \
+                        and parameter.setpoints is not None:
+                    arr_idx = parameter.names.index(name)
+                    arr = parameter.setpoints[arr_idx][k]
+                    label = parameter.setpoint_labels[arr_idx][k]
+                    unit = parameter.setpoint_units[arr_idx][k]
+    
                 # Add singleton dimensions
                 arr = np.broadcast_to(arr, result.shape[: k + 1])
 
@@ -426,6 +433,8 @@ class Measurement:
                     action_indices=action_indices + (0,) * k,
                     result=arr,
                     name=f"{name}_set{k}",
+                    label=label,
+                    unit=unit,
                     is_setpoint=True,
                 )
                 set_arrays.append(set_array)
@@ -552,6 +561,11 @@ class Measurement:
             for k, set_array in enumerate(data_array.set_arrays[ndim:]):
                 # Successive set arrays must increase dimensionality by unity
                 arr = np.arange(result.shape[k])
+                if parameter is not None and hasattr(parameter, 'setpoints') \
+                        and parameter.setpoints is not None:
+                    arr_idx = parameter.names.index(name)
+                    arr = parameter.setpoints[arr_idx][k]
+
                 # Add singleton dimensions
                 arr = np.broadcast_to(arr, result.shape[: k + 1])
                 data_to_store[set_array.array_id] = arr
@@ -629,12 +643,12 @@ class Measurement:
         if name is None:
             name = multi_parameter.name
 
-        # TODO also incorporate setpoints
         with Measurement(name) as msmt:
             for k, (key, val) in enumerate(results.items()):
                 msmt.measure(
                     val,
                     name=key,
+                    parameter=multi_parameter,
                     label=multi_parameter.labels[k],
                     unit=multi_parameter.units[k],
                 )
@@ -705,8 +719,12 @@ class Measurement:
 
         return value
 
-    def _measure_value(self, value, name, label=None, unit=None):
-        """Store a single value (float/int/bool)"""
+    def _measure_value(self, value, name, parameter=None, label=None, unit=None):
+        """Store a single value (float/int/bool)
+
+        If this value comes from another parameter acquisition, e.g. from a
+        MultiParameter, the parameter can be passed to use the right set arrays.
+        """
         if name is None:
             raise RuntimeError("Must provide a name when measuring a value")
 
@@ -724,6 +742,7 @@ class Measurement:
         self._add_measurement_result(
             action_indices=self.action_indices,
             result=result,
+            parameter=parameter,
             name=name,
             label=label,
             unit=unit,
@@ -806,7 +825,7 @@ class Measurement:
         elif isinstance(measurable, dict):
             result = self._measure_dict(measurable, name=name)
         elif isinstance(measurable, RAW_VALUE_TYPES):
-            result = self._measure_value(measurable, name=name, label=label, unit=unit)
+            result = self._measure_value(measurable, name=name, label=label, unit=unit, **kwargs)
             self.skip()  # Increment last action index by 1
         else:
             raise RuntimeError(
