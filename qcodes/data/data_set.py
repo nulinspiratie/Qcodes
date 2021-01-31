@@ -219,7 +219,10 @@ class DataSet(DelegateAttributes):
         if key in self.arrays:
             return self.arrays[key]
         else:
-            return self.get_array(key)
+            try:
+                return self.get_array(key)
+            except RuntimeError as e:
+                return self.get_array(key, set_arrays=True)
 
     def _ipython_key_completions_(self):
         """Tab completion for IPython, i.e. the data arrays """
