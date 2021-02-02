@@ -17,8 +17,8 @@ from qcodes.utils.helpers import PerformanceTimer
 from picoscope import *
 from picoscope import ps3000a as ps
 
-
 logger = logging.getLogger(__name__)
+
 
 def error_check(value, method_name=None):
     """Check if returned value after a set is an error code or not.
@@ -31,7 +31,7 @@ def error_check(value, method_name=None):
         AssertionError if returned value is an error code.
     """
     assert isinstance(value, (str, bool, np.ndarray)) or (
-        int(value) >= 0
+            int(value) >= 0
     ), f"Error in call to picoscope.ps3000a.{method_name}, error code {value}"
 
 
@@ -75,16 +75,16 @@ class PicoParameter(Parameter):
     """
 
     def __init__(
-        self,
-        name: str,
-        parent: Union[Instrument, InstrumentChannel] = None,
-        get_cmd: Callable = None,
-        get_function: Callable = None,
-        set_cmd: Callable = False,
-        set_function: Callable = None,
-        set_args: List[str] = None,
-        initial_value=None,
-        **kwargs,
+            self,
+            name: str,
+            parent: Union[Instrument, InstrumentChannel] = None,
+            get_cmd: Callable = None,
+            get_function: Callable = None,
+            set_cmd: Callable = False,
+            set_function: Callable = None,
+            set_args: List[str] = None,
+            initial_value=None,
+            **kwargs,
     ):
         self.get_cmd = get_cmd
         self.get_function = get_function
@@ -150,75 +150,6 @@ class PicoParameter(Parameter):
         else:
             return self.get_latest(raw=True)
 
-class PicoAcquisitionParameter(MultiParameter):
-    def __init__(self, instrument, **kwargs):
-        self.instrument = instrument
-        super().__init__(snapshot_value=False,
-                         names=[''], shapes=[()], **kwargs)
-
-    @property
-    def names(self):
-        if self.instrument is None or \
-                not hasattr(self.instrument, 'active_channels')\
-                or self.instrument.active_channels is None:
-            return ['']
-        else:
-            return tuple(['ch{}_signal'.format(ch.id) for ch in
-                          self.instrument.active_channels])
-
-    @names.setter
-    def names(self, names):
-        # Ignore setter since getter is extracted from instrument
-        pass
-
-    @property
-    def labels(self):
-        return self.names
-
-    @labels.setter
-    def labels(self, labels):
-        # Ignore setter since getter is extracted from instrument
-        pass
-
-    @property
-    def units(self):
-        return ['V'] * len(self.names)
-
-    @units.setter
-    def units(self, units):
-        # Ignore setter since getter is extracted from instrument
-        pass
-
-    @property
-    def shapes(self):
-        if hasattr(self.instrument, 'average_mode'):
-            average_mode = self.instrument.average_mode()
-
-            if average_mode == 'point':
-                shape = ()
-            elif average_mode == 'trace':
-                shape = (self.instrument.samples(),)
-            else:
-                shape = (self.instrument.samples(),
-                         self.instrument.points_per_trace())
-            return tuple([shape] * len(self.instrument.active_channels))
-        else:
-            return tuple(() * len(self.names))
-
-    @shapes.setter
-    def shapes(self, shapes):
-        # Ignore setter since getter is extracted from acquisition controller
-        pass
-
-    def get_raw(self):
-        raw_data = self.instrument.acquisition()
-        if self.instrument.average_mode() == 'point':
-            return raw_data.mean()
-        if self.instrument.average_mode() == 'trace':
-            return raw_data.mean(axis=0)
-        else:
-            return raw_data
-
 
 class ScopeChannel(InstrumentChannel):
     """Picoscope channel
@@ -252,7 +183,7 @@ class ScopeChannel(InstrumentChannel):
 
         self.range = PicoParameter(
             "range",
-            initial_value=2, # 2 V range
+            initial_value=2,  # 2 V range
             vals=vals.Enum(*[option['rangeV'] for option in parent.CHANNEL_RANGE]),
             set_function=parent.setChannel,
             set_args=["coupling", "range", "offset", "enabled"],
@@ -292,7 +223,6 @@ class PicoScope(Instrument, ps.PS3000a):
         Instrument.__init__(self, name, **kwargs)
         ps.PS3000a.__init__(self, serialNumber=serialNumber, connect=connect, **kwargs)
 
-
         self._raw_buffers = {}
         self.buffers = {ch: None for ch in self.channel_names}
 
@@ -307,11 +237,14 @@ class PicoScope(Instrument, ps.PS3000a):
 
         self.initialize_channels()
 
-
-        self.points_per_trace = Parameter(set_cmd=None, initial_value=1000, set_parser=lambda x: int(round(x)))
-        self.samples = Parameter(set_cmd=None, initial_value=10, set_parser=lambda x: int(round(x)))
-        self.sample_rate = Parameter(set_cmd=None, initial_value=500e3, set_parser=lambda x: int(round(x)))
-        self.average_mode = Parameter(set_cmd=None, get_cmd=None, vals=vals.Enum('point', 'trace', None))
+        self.points_per_trace = Parameter(set_cmd=None, initial_value=1000,
+                                          set_parser=lambda x: int(round(x)))
+        self.samples = Parameter(set_cmd=None, initial_value=10,
+                                 set_parser=lambda x: int(round(x)))
+        self.sample_rate = Parameter(set_cmd=None, initial_value=500e3,
+                                     set_parser=lambda x: int(round(x)))
+        self.average_mode = Parameter(set_cmd=None, get_cmd=None,
+                                      vals=vals.Enum('point', 'trace', None))
 
         # Trigger parameters
         self.use_trigger = Parameter(set_cmd=None, initial_value=False, vals=vals.Bool())
@@ -323,13 +256,15 @@ class PicoScope(Instrument, ps.PS3000a):
             #     'external': ps.PS3000A_CHANNEL[f'PS3000A_EXTERNAL']
             # }
         )
-        self.trigger_threshold = Parameter(set_cmd=None, unit='V', initial_value=0.5, vals=vals.Numbers())
+        self.trigger_threshold = Parameter(set_cmd=None, unit='V', initial_value=0.5,
+                                           vals=vals.Numbers())
         self.trigger_direction = Parameter(
             set_cmd=None, initial_value='Rising', vals=vals.Enum(*self.THRESHOLD_TYPE)
         )
         self.trigger_delay = Parameter(set_cmd=None, initial_value=0, unit='s')
         self.autotrigger_ms = Parameter(set_cmd=None, initial_value=0, unit='ms',
-                                        docstring='milliseconds to wait after trigger. 0 means wait indefinitely')
+                                        docstring='milliseconds to wait after trigger. '
+                                                  '0 means wait indefinitely')
         self.buffer_actions = []
         self.timings = PerformanceTimer()
 
@@ -358,7 +293,8 @@ class PicoScope(Instrument, ps.PS3000a):
     def initialize_channels(self):
         """Initialize picoscope channels (enable, coupling, range, offset)"""
         for ch in self.channels:
-            #  specifies whether an input channel is to be enabled, its input coupling type, voltage range and analog offset.
+            #  specifies whether an input channel is to be enabled, its input coupling
+            #  type, voltage range and analog offset.
             self.setChannel(
                 channel=ch.id,
                 enabled=ch.enabled.raw_value,
@@ -371,16 +307,15 @@ class PicoScope(Instrument, ps.PS3000a):
         """Initializes buffers (number of buffers and buffer size)"""
         # Create buffers ready for assigning pointers for data collection
         self._raw_buffers = {
-            ch.id: np.zeros(shape=(self.samples(), self.points_per_trace()), dtype=np.int16)
+            ch.id: np.zeros(shape=(self.samples(), self.points_per_trace()),
+                            dtype=np.int16)
             for ch in self.active_channels
         }
-        self.buffers = {ch.id: None for ch in self.active_channels} # empty for now
+        self.buffers = {ch.id: None for ch in self.active_channels}  # empty for now
 
     def setup_block_capture(self):
         self.setSamplingFrequency(self.sample_rate(), self.points_per_trace())
-        # self.setSimpleTrigger("A", threshold_V=0.5)
-
-        samples_per_segment = self.memorySegments(self.samples())
+        self.memorySegments(self.samples())
         self.setNoOfCaptures(self.samples())
         self.runBlock()
 
@@ -403,12 +338,15 @@ class PicoScope(Instrument, ps.PS3000a):
     def process_data(self):
         # Convert ADC counts data to V
         for ch in self.active_channels:
-            if self.buffers[ch.id] is not None and self.buffers[ch.id].shape == self._raw_buffers[ch.id].shape:
+            if self.buffers[ch.id] is not None and self.buffers[ch.id].shape == \
+                    self._raw_buffers[ch.id].shape:
                 # Save memory by passing the already created buffers
-                self.rawToV(ch.id, dataRaw=self._raw_buffers[ch.id], dataV=self.buffers[ch.id])
+                self.rawToV(ch.id, dataRaw=self._raw_buffers[ch.id],
+                            dataV=self.buffers[ch.id])
             else:
-                self.buffers[ch.id] = np.reshape(self.rawToV(ch.id, self._raw_buffers[ch.id]),
-                                                 newshape=(self.samples(), self.points_per_trace()))
+                self.buffers[ch.id] = np.reshape(
+                    self.rawToV(ch.id, self._raw_buffers[ch.id]),
+                    newshape=(self.samples(), self.points_per_trace()))
         for buffer_action in self.buffer_actions:
             buffer_action(self.buffers)
 
@@ -416,11 +354,10 @@ class PicoScope(Instrument, ps.PS3000a):
 
     def plot_traces(self):
         plot = MatPlot(subplots=len(self.buffers))
-        t_list = np.arange(self.points_per_trace(), 1/self.sample_rate())
+        t_list = np.arange(self.points_per_trace(), 1 / self.sample_rate())
         samples = np.arange(self.samples(), dtype=float)
         for k, (ch, buffer) in enumerate(self.buffers.items()):
             plot[k].add(buffer, x=t_list, y=samples)
-
             plot[k].set_title(f'Channel {ch}')
 
     def acquisition(self):
