@@ -152,7 +152,7 @@ class Measurement:
                 self.dataset.active = True
 
                 self._initialize_metadata(self.dataset)
-                with self.timings.record('save_metadata'):
+                with self.timings.record(['dataset', 'save_metadata']):
                     self.dataset.save_metadata()
 
                     if hasattr(self.dataset, 'save_config'):
@@ -191,6 +191,7 @@ class Measurement:
                 self.action_indices = msmt.action_indices
                 self.data_arrays = msmt.data_arrays
                 self.set_arrays = msmt.set_arrays
+                self.timings = msmt.timings
 
             # Perform measurement thread check, and set user namespace variables
             if self.force_cell_thread and Measurement.running_measurement is self:
@@ -261,8 +262,12 @@ class Measurement:
 
             t_stop = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             self.dataset.add_metadata({"t_stop": t_stop})
-            self.dataset.finalize()
-            self.dataset.active = False
+            self.dataset.add_metadata({"timings": self.timings})
+
+            # Sadly the timing to finalize the dataset won't be stored in the metadata.
+            with self.timings.record(['dataset', 'finalize']):
+                self.dataset.finalize()
+                self.dataset.active = False
 
             self.log(f'Measurement finished {self.dataset.location}')
 
@@ -392,7 +397,7 @@ class Measurement:
         data_array.init_data()
 
         self.dataset.add_array(data_array)
-        with self.timings.record('save_metadata'):
+        with self.timings.record(['dataset', 'save_metadata']):
             self.dataset.save_metadata()
 
         # Add array to set_arrays or to data_arrays of this Measurement
@@ -567,7 +572,8 @@ class Measurement:
             loop_indices = (0,)
 
         if store:
-            self.dataset.store(loop_indices, data_to_store)
+            with self.timings.record(['dataset', 'store']):
+                self.dataset.store(loop_indices, data_to_store)
 
         return data_to_store
 
