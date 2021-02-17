@@ -265,9 +265,19 @@ class Measurement:
             self.dataset.add_metadata({"timings": self.timings})
 
             # Sadly the timing to finalize the dataset won't be stored in the metadata.
-            with self.timings.record(['dataset', 'finalize']):
+
                 self.dataset.finalize()
                 self.dataset.active = False
+            with self.timings.record(['dataset', 'finalize']):
+                # If dataset only contains setpoints, don't finalize dataset.
+                if not all([arr.is_setpoint for arr in self.dataset.arrays.values()]):
+                    self.dataset.finalize()
+                else:
+                    if hasattr(self.dataset.formatter, 'close_file'):
+                        self.dataset.formatter.close_file(self)
+                    self.dataset.save_metadata()
+
+            self.dataset.active = False
 
             self.log(f'Measurement finished {self.dataset.location}')
 
