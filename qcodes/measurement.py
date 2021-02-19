@@ -257,7 +257,14 @@ class Measurement:
 
             t_stop = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             self.dataset.add_metadata({"t_stop": t_stop})
-            self.dataset.finalize()
+            # If dataset only contains setpoints, don't finalize dataset.
+            if not all([arr.is_setpoint for arr in self.dataset.arrays.values()]):
+                self.dataset.finalize()
+            else:
+                if hasattr(self.dataset.formatter, 'close_file'):
+                    self.dataset.formatter.close_file(self)
+                self.dataset.save_metadata()
+
             self.dataset.active = False
 
             self.log(f'Measurement finished {self.dataset.location}')
