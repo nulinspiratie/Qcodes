@@ -370,3 +370,39 @@ class PicoScope(Instrument, ps.PS3000a):
         with self.timings.record('process_data'):
             self.process_data()
         return self.buffers
+    # Streaming mode
+    def setup_streaming(self):
+        def streamingReadySimple(handle, nSamples, startIndex, overflow, triggerAt, triggered, autoStop, parameter):
+            global totPts
+            totPts+=nSamples
+            endInd=startIndex+nSamples
+            # valid = data[:,startIndex:endInd]
+            # if valid.size<nSamples: #This is never run, as the picoscope handles the overruns itself (i.e. next call will tell us about the extra data)
+            #     nStart=nSamples-valid.size
+            #     print('circling back')
+            #     valid=np.hstack([valid, data[:,:nStart]])
+
+        self._callback = streamingReadySimple
+
+
+
+    def _start_stream_acquisition(self):
+        self._raw_buffers = self.allocateDataBuffers(channels=["A", "B", "C", "D"], numSamples=self.points_per_trace(), downSampleMode=0)
+        self.runStreaming(bAutoStop=False, downSampleMode=0, downSampleRatio=1)
+
+
+    def _acquire_stream_data(self):
+        try:
+            global totPts
+            while totPts < 100:
+                # with self.timings.record('wait_for_stream_data'):
+                try:
+                    ret = self.getStreamingLatestValues(callback=self._callback)
+                    print(ret)
+                except OSError as e:
+                    if 'PICO_BUSY' in e.args[0]:
+                        print('PICO_BUSY exception, try again shortly')
+                    else:
+                        raise e
+        except:
+            pass
