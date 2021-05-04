@@ -540,9 +540,9 @@ class PCDDSChannel(InstrumentChannel):
             # Wait for trigger
             return 0
         else:
-            cycles = int(self.clk * duration)
+            cycles = int(round(self.clk * duration))
             cycles -= self.pulse_timing_offset
-            assert cycles > 0, "PCDDS pulse must be at least 140 ns long"
+            assert cycles > 0, f"PCDDS pulse must be at least 140 ns long, not {duration}"
             return cycles
 
 
