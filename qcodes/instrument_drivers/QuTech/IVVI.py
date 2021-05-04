@@ -1,7 +1,7 @@
 import time
 import logging
 import numpy as np
-import visa  # used for the parity constant
+import pyvisa as visa  # used for the parity constant
 import traceback
 import threading
 

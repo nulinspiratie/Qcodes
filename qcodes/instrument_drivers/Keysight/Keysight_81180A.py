@@ -2,7 +2,7 @@ import array
 from warnings import warn
 from time import sleep, time
 import logging
-import visa
+import pyvisa as visa
 import struct
 
 from qcodes import (

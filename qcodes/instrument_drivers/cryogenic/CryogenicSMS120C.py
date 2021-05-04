@@ -10,7 +10,7 @@ This magnet PS driver has been tested with:
 
 """
 
-import visa
+import pyvisa as visa
 import re
 import logging
 import time
