@@ -832,8 +832,7 @@ class PerformanceTimer():
 
         return timings_str
 
-    @contextmanager
-    def record(self, key, val=None):
+    def _record_value(self, key, val):
         if isinstance(key, str):
             timing_list = self.timings.setdefault(key, [])
         elif isinstance(key, (list)):
@@ -845,15 +844,17 @@ class PerformanceTimer():
 
         if val is not None:
             timing_list.append(val)
-        else:
-            t0 = time.perf_counter()
-            yield
-            t1 = time.perf_counter()
-            timing_list.append(t1 - t0)
 
         # Optionally remove oldest elements
         for _ in range(len(timing_list) - self.max_records):
             timing_list.pop(0)
+
+    @contextmanager
+    def record(self, key, val=None):
+        t0 = time.perf_counter()
+        yield
+        t1 = time.perf_counter()
+        self._record_value(key, t1 - t0)
 
 
 def arreq_in_list(myarr: np.ndarray,

@@ -828,7 +828,7 @@ class Measurement:
                 f"is not a dict, int, float, bool, or numpy array."
             )
 
-        self.timings.record(
+        self.timings._record_value(
             ['measurement', initial_action_indices, 'total'],
             perf_counter() - t0
         )
