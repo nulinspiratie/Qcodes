@@ -610,7 +610,8 @@ class Measurement:
         self._verify_action(action=parameter, name=name, add_if_new=True)
 
         # Get parameter result
-        result = parameter(**kwargs)
+        with self.timings.record(['measurement', self.action_indices, name]):
+            result = parameter(**kwargs)
 
         self._add_measurement_result(
             self.action_indices,
@@ -636,7 +637,8 @@ class Measurement:
         # Ensure measuring multi_parameter matches the current action_indices
         self._verify_action(action=multi_parameter, name=name, add_if_new=True)
 
-        results_list = multi_parameter(**kwargs)
+        with self.timings.record(['measurement', self.action_indices, name]):
+            results_list = multi_parameter(**kwargs)
 
         results = dict(zip(multi_parameter.names, results_list))
 
@@ -680,7 +682,8 @@ class Measurement:
         # Record action_indices before the callable is called
         action_indices = self.action_indices
 
-        results = callable(**kwargs)
+        with self.timings.record(['measurement', self.action_indices, name]):
+            results = callable(**kwargs)
 
         # Check if the callable already performed a nested measurement
         # In this case, the nested measurement is stored as a data_group, and
@@ -814,12 +817,6 @@ class Measurement:
 
         t0 = perf_counter()
         initial_action_indices = self.action_indices
-
-        if name is None:
-            try:
-                name = measurable.name
-            except AttributeError:
-                pass
 
         # TODO Incorporate kwargs name, label, and unit, into each of these
         with self.timings.record(['measurement', self.action_indices, name]):
