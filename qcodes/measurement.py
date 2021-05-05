@@ -792,13 +792,10 @@ class Measurement:
                 "in a different thread."
             )
 
-
-        if self._last_measurement_time is not None:
-            self.timings._record_value(
-                ['measurement', self.action_indices, 'pre_msmt_time'],
-                perf_counter() - self._last_measurement_time
-            )
-
+        self.timings._record_value(
+            ['measurement', self.action_indices, 'pre_msmt_time'],
+            perf_counter() - self._last_measurement_time
+        )
 
         if self != Measurement.running_measurement:
             # Since this Measurement is not the running measurement, it is a
