@@ -102,6 +102,7 @@ class Measurement:
         self._masked_properties = []
 
         self.timings = PerformanceTimer()
+        self._last_measurement_time = perf_counter()
 
     def log(self, message: str, level="info"):
         """Send a log message
@@ -789,6 +790,14 @@ class Measurement:
                 "in a different thread."
             )
 
+
+        if self._last_measurement_time is not None:
+            self.timings._record_value(
+                ['measurement', self.action_indices, 'pre_msmt_time'],
+                perf_counter() - self._last_measurement_time
+            )
+
+
         if self != Measurement.running_measurement:
             # Since this Measurement is not the running measurement, it is a
             # DataGroup in the running measurement. Delegate measurement to the
@@ -830,9 +839,10 @@ class Measurement:
 
         self.timings._record_value(
             ['measurement', initial_action_indices, 'total'],
-            perf_counter() - t0
+            perf_counter() - self._last_measurement_time
         )
 
+        self._last_measurement_time = perf_counter()
         return result
 
     # Methods related to masking of parameters/attributes/keys
