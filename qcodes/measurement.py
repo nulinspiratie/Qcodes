@@ -636,8 +636,7 @@ class Measurement:
         # Ensure measuring multi_parameter matches the current action_indices
         self._verify_action(action=multi_parameter, name=name, add_if_new=True)
 
-        with self.timings.record(['measurement', self.action_indices, 'get']):
-            results_list = multi_parameter(**kwargs)
+        results_list = multi_parameter(**kwargs)
 
         results = dict(zip(multi_parameter.names, results_list))
 
@@ -816,26 +815,33 @@ class Measurement:
         t0 = perf_counter()
         initial_action_indices = self.action_indices
 
+        if name is None:
+            try:
+                name = measurable.name
+            except AttributeError:
+                pass
+
         # TODO Incorporate kwargs name, label, and unit, into each of these
-        if isinstance(measurable, Parameter):
-            result = self._measure_parameter(
-                measurable, name=name, label=label, unit=unit, **kwargs
-            )
-            self.skip()  # Increment last action index by 1
-        elif isinstance(measurable, MultiParameter):
-            result = self._measure_multi_parameter(measurable, name=name, **kwargs)
-        elif callable(measurable):
-            result = self._measure_callable(measurable, name=name, **kwargs)
-        elif isinstance(measurable, dict):
-            result = self._measure_dict(measurable, name=name)
-        elif isinstance(measurable, RAW_VALUE_TYPES):
-            result = self._measure_value(measurable, name=name, label=label, unit=unit)
-            self.skip()  # Increment last action index by 1
-        else:
-            raise RuntimeError(
-                f"Cannot measure {measurable} as it cannot be called, and it "
-                f"is not a dict, int, float, bool, or numpy array."
-            )
+        with self.timings.record(['measurement', self.action_indices, name]):
+            if isinstance(measurable, Parameter):
+                result = self._measure_parameter(
+                    measurable, name=name, label=label, unit=unit, **kwargs
+                )
+                self.skip()  # Increment last action index by 1
+            elif isinstance(measurable, MultiParameter):
+                result = self._measure_multi_parameter(measurable, name=name, **kwargs)
+            elif callable(measurable):
+                result = self._measure_callable(measurable, name=name, **kwargs)
+            elif isinstance(measurable, dict):
+                result = self._measure_dict(measurable, name=name)
+            elif isinstance(measurable, RAW_VALUE_TYPES):
+                result = self._measure_value(measurable, name=name, label=label, unit=unit)
+                self.skip()  # Increment last action index by 1
+            else:
+                raise RuntimeError(
+                    f"Cannot measure {measurable} as it cannot be called, and it "
+                    f"is not a dict, int, float, bool, or numpy array."
+                )
 
         self.timings._record_value(
             ['measurement', initial_action_indices, 'total'],
