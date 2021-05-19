@@ -13,7 +13,7 @@ import logging
 from qcodes import VisaInstrument
 from qcodes import validators as vals
 from time import sleep
-import visa
+import pyvisa as visa
 
 
 log = logging.getLogger(__name__)

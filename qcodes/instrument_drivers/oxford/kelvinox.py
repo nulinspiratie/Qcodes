@@ -9,7 +9,7 @@
 
 
 from time import sleep
-import visa
+import pyvisa as visa
 import logging
 import numpy
 from qcodes import VisaInstrument
