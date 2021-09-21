@@ -50,7 +50,8 @@ class PCDDSChannel(InstrumentChannel):
         self.fpga = self._parent.fpga
         self.id = id
         # TODO verify bits
-        self.n_pointer_bits = 17
+        self.n_pulse_pointer_bits = 17
+        self.n_instruction_pointer_bits = 17  # TODO change
         self.n_op_bits = 10
         self.n_phase_bits = 45
         self.n_accum_bits = 45
@@ -93,12 +94,14 @@ class PCDDSChannel(InstrumentChannel):
             'pulses',
             label=f'ch{self.id} pulses',
             initial_value=[],
+            snapshot_value=False,
             docstring='List of pulses'
         )
         self.add_parameter(
             'instruction_sequence',
             label=f'ch{self.id} instruction sequence of pulses',
             initial_value=[],
+            snapshot_value=False,
             docstring='The instruction sequence for all pulses sent to the DDS.'
                       'Gets cleared during clear_memory()'
         )
@@ -163,9 +166,9 @@ class PCDDSChannel(InstrumentChannel):
         """
         # TODO should be separate for pulse and instruction memory
         # Check that the pointer is in the allowed range
-        assert pointer < 2**self.n_pointer_bits, \
+        assert pointer < 2**self.n_pulse_pointer_bits, \
             f'Pointer with value {pointer} is outside of bounds ' \
-            f'[0, {2**self.n_pointer_bits-1}]'
+            f'[0, {2 ** self.n_pulse_pointer_bits - 1}]'
         # Convert and return
         return (operation << 22) + pointer
 
@@ -188,6 +191,22 @@ class PCDDSChannel(InstrumentChannel):
             self.write_zero_pulse(pulse_idx=i)
         self.instruction_sequence().clear()
 
+    def write_instruction(self, instruction_idx: int,  pulse_idx: int, next_instruction: int):
+        operation = int('0000110000', 2)
+        instruction = (operation << 22) + instruction_idx
+
+        # Construct the pulse parameter to be written to memory
+        pulse_data = pulse_idx
+        pulse_data += (next_instruction << self.n_pulse_pointer_bits)
+        pulse_data = self.split_value(pulse_data)
+
+        self.fpga.set_fpga_pc_port(self.fpga_port, [instruction], self.id, 0, 1)
+        for data_row in pulse_data[::-1]:
+            self.fpga.set_fpga_pc_port(self.fpga_port, [data_row], self.id, 0, 1)
+
+        # TODO: Update instruction_sequence()
+
+    # TODO should not be instr, choose different name
     def write_instr(self, instr: dict):
         """
         Function to write an instruction to the pulse memory.
@@ -235,8 +254,6 @@ class PCDDSChannel(InstrumentChannel):
         else:
             raise ValueError(f'Unknown instruction type: {instr["instr"]}')
 
-        self.instruction_sequence().append(instr)
-
     def write_sine_pulse(
             self,
             pulse_idx: int,
@@ -263,15 +280,15 @@ class PCDDSChannel(InstrumentChannel):
             'The combined output will be larger than the maximum output voltage'
 
         # Convert all the pulse parameters to the correct register values
-        phase_val = self.phase2val(phase)
-        freq_val = self.freq2val(frequency)
-        accum_val = 0
-        amplitude_val = self.amp2val(amplitude)
-        offset_val = self.offset2val(offset)
-        pulse_timing = self.duration2val(duration)
-
-        self.write_pulse(pulse_idx, phase_val, freq_val, accum_val,
-                         amplitude_val, offset_val, pulse_timing)
+        self.write_pulse(
+            pulse_idx=pulse_idx,
+            phase=self.phase2val(phase),
+            frequency=self.freq2val(frequency),
+            frequency_accumulation=0,
+            amplitude=self.amp2val(amplitude),
+            offset=self.offset2val(offset),
+            pulse_timing=self.duration2val(duration)
+        )
 
     def write_dc_pulse(self, pulse_idx: int, voltage: float, duration: float = None):
         """
@@ -286,15 +303,14 @@ class PCDDSChannel(InstrumentChannel):
             raise TypeError('Incorrect type for function input pulse. It '
                             'should be an int')
         # Convert the voltage to the correct register value
-        offset_val = self.offset2val(voltage)
-        amplitude_val = 0
-        phase_val = 0
-        accum_val = 0
-        freq_val = 0
-        pulse_timing = self.duration2val(duration)
-
-        self.write_pulse(pulse_idx, phase_val, freq_val, accum_val,
-                         amplitude_val, offset_val, pulse_timing)
+        self.write_pulse(
+            pulse_idx=pulse_idx,
+            phase=0,
+            frequency=0,
+            frequency_accumulation=0,
+            amplitude=0,
+            offset=self.offset2val(voltage),
+            pulse_timing=self.duration2val(duration))
 
     def write_chirp_pulse(self, pulse_idx: int, phase: float, frequency: float,
                           frequency_accumulation: float, amplitude: float,
@@ -316,15 +332,15 @@ class PCDDSChannel(InstrumentChannel):
         assert np.abs(offset) + np.abs(amplitude) <= self.v_max + 1e-10, \
             'The combined output will be larger than the maximum output voltage'
 
-        phase_val = self.phase2val(phase)
-        freq_val = self.freq2val(frequency)
-        accum_val = self.accum2val(frequency_accumulation)
-        amplitude_val = self.amp2val(amplitude)
-        offset_val = self.offset2val(offset)
-        pulse_timing = self.duration2val(duration)
-
-        self.write_pulse(pulse_idx, phase_val, freq_val, accum_val,
-                         amplitude_val, offset_val, pulse_timing)
+        self.write_pulse(
+            pulse_idx=pulse_idx,
+            phase=self.phase2val(phase),
+            frequency=self.freq2val(frequency),
+            frequency_accumulation=self.accum2val(frequency_accumulation),
+            amplitude=self.amp2val(amplitude),
+            offset=self.offset2val(offset),
+            pulse_timing=self.duration2val(duration)
+        )
 
     def write_pulse(self, pulse_idx: int, phase: int, frequency: int,
                     frequency_accumulation: int, amplitude: int, offset: int,
@@ -352,10 +368,10 @@ class PCDDSChannel(InstrumentChannel):
         }
 
         # TODO should this be n_pointer_bits?
-        if pulse_idx < 0 or pulse_idx > min(2**self.n_pointer_bits-1, self.max_pulse_idx):
+        if pulse_idx < 0 or pulse_idx > min(2 ** self.n_pulse_pointer_bits - 1, self.max_pulse_idx):
             raise ValueError(
                 f'The pulse index is outside of memory. '
-                f'It should be between 0 and {2**self.n_pointer_bits-1}')
+                f'It should be between 0 and {2 ** self.n_pulse_pointer_bits - 1}')
 
         # Construct the initial instruction to write a new pulse to memory
         operation = int('0000100000', 2)
@@ -373,21 +389,8 @@ class PCDDSChannel(InstrumentChannel):
         pulse_data = self.split_value(pulse_data)
 
         self.fpga.set_fpga_pc_port(self.fpga_port, [instr], self.id, 0, 1)
-        # self.fpga.set_fpga_pc_port(self.fpga_port, pulse_data, self.id, 0, 1)
-        self.fpga.set_fpga_pc_port(self.fpga_port, [pulse_data[6]],
-                                   self.id, 0, 1)
-        self.fpga.set_fpga_pc_port(self.fpga_port, [pulse_data[5]],
-                                   self.id, 0, 1)
-        self.fpga.set_fpga_pc_port(self.fpga_port, [pulse_data[4]],
-                                   self.id, 0, 1)
-        self.fpga.set_fpga_pc_port(self.fpga_port, [pulse_data[3]],
-                                   self.id, 0, 1)
-        self.fpga.set_fpga_pc_port(self.fpga_port, [pulse_data[2]],
-                                   self.id, 0, 1)
-        self.fpga.set_fpga_pc_port(self.fpga_port, [pulse_data[1]],
-                                   self.id, 0, 1)
-        self.fpga.set_fpga_pc_port(self.fpga_port, [pulse_data[0]],
-                                   self.id, 0, 1)
+        for data_row in pulse_data[6::-1]:
+            self.fpga.set_fpga_pc_port(self.fpga_port, [data_row], self.id, 0, 1)
 
         # Update self.pulses
         for k, pulse in enumerate(self.pulses()):
