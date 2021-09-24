@@ -213,11 +213,9 @@ class PCDDSChannel(InstrumentChannel):
         # Construct the pulse parameter to be written to memory
         instruction_data = next_instruction
         instruction_data += (pulse_idx << self.n_instruction_pointer_bits)
-        instruction_data = self.split_value(instruction_data)
 
         self.fpga.set_fpga_pc_port(self.fpga_port, [instruction], self.id, 0, 1)
-        for data_row in instruction_data[::-1]:
-            self.fpga.set_fpga_pc_port(self.fpga_port, [data_row], self.id, 0, 1)
+        self.fpga.set_fpga_pc_port(self.fpga_port, [instruction_data], self.id, 0, 1)
 
         # Update self.instruction_sequence
         instruction_dict = {
