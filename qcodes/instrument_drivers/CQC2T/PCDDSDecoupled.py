@@ -207,17 +207,15 @@ class PCDDSChannel(InstrumentChannel):
     def write_instruction(self, instruction_idx: int,  pulse_idx: int, next_instruction: int):
         assert instruction_idx <= self.max_instruction_idx
 
-        operation = int('0000110000', 2)
+        operation = int('0000100000', 2)
         instruction = (operation << 22) + instruction_idx
 
         # Construct the pulse parameter to be written to memory
-        instruction_data = pulse_idx
-        instruction_data += (next_instruction << self.n_pulse_pointer_bits)
-        instruction_data = self.split_value(instruction_data)
+        instruction_data = next_instruction
+        instruction_data += (pulse_idx << self.n_instruction_pointer_bits)
 
         self.fpga.set_fpga_pc_port(self.fpga_port, [instruction], self.id, 0, 1)
-        for data_row in instruction_data[::-1]:
-            self.fpga.set_fpga_pc_port(self.fpga_port, [data_row], self.id, 0, 1)
+        self.fpga.set_fpga_pc_port(self.fpga_port, [instruction_data], self.id, 0, 1)
 
         # Update self.instruction_sequence
         instruction_dict = {
@@ -227,7 +225,7 @@ class PCDDSChannel(InstrumentChannel):
         }
         for k, existing_instruction in enumerate(self.instruction_sequence()):
             if existing_instruction['instruction_idx'] == instruction_idx:
-                self.instruction_sequence[k] = instruction_dict
+                self.instruction_sequence()[k] = instruction_dict
                 break
         else:
             self.instruction_sequence().append(instruction_dict)
@@ -290,6 +288,20 @@ class PCDDSChannel(InstrumentChannel):
             )
         else:
             raise ValueError(f'Unknown instruction type: {instr["instr"]}')
+
+        # Update self.pulses
+        for k, pulse in enumerate(self.pulses()):
+            if pulse['pulse_idx'] == instr['pulse_idx']:
+                self.pulses()[k] = instr
+                break
+        else:
+            self.pulses().append(instr)
+
+        # Print results
+        if self.debug_mode():
+            print("\nPulse properties:\n")
+            for key, val in instr.items():
+                print(f'\t{key}: {val}')
 
     def write_sine_pulse(
             self,
@@ -422,7 +434,7 @@ class PCDDSChannel(InstrumentChannel):
                 f'It should be between 0 and {2 ** self.n_pulse_pointer_bits - 1}')
 
         # Construct the initial instruction to write a new pulse to memory
-        operation = int('0000100000', 2)
+        operation = int('0000110000', 2)
         instr = self.construct_instruction(operation, pulse_idx)
 
         # Construct the pulse parameter to be written to memory
@@ -439,21 +451,6 @@ class PCDDSChannel(InstrumentChannel):
         self.fpga.set_fpga_pc_port(self.fpga_port, [instr], self.id, 0, 1)
         for data_row in pulse_data[6::-1]:
             self.fpga.set_fpga_pc_port(self.fpga_port, [data_row], self.id, 0, 1)
-
-        # Update self.pulses
-        for k, pulse in enumerate(self.pulses()):
-            if pulse['pulse_idx'] == pulse_idx:
-                self.pulses()[k] = pulse_dict
-                break
-        else:
-            self.pulses().append(pulse_dict)
-
-        # Print results
-        if self.debug_mode():
-            print("\nPulse properties:\n")
-            for key, val in pulse_dict.items():
-                print(f'\t{key}: {val}')
-            print(f'\tPulse data: {pulse_data}')
 
     def split_value(self, value: int) -> List[int]:
         """
