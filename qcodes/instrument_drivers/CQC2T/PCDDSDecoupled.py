@@ -49,8 +49,7 @@ class PCDDSChannel(InstrumentChannel):
         super().__init__(parent=parent, name=name, **kwargs)
         self.fpga = self._parent.fpga
         self.id = id
-        # TODO verify bits
-        self.n_pulse_pointer_bits = 17
+        self.n_pulse_pointer_bits = 11
         self.n_instruction_pointer_bits = 17  # TODO change
         self.n_op_bits = 10
         self.n_phase_bits = 45
