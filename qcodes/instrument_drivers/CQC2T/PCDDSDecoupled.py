@@ -50,7 +50,7 @@ class PCDDSChannel(InstrumentChannel):
         self.fpga = self._parent.fpga
         self.id = id
         self.n_pulse_pointer_bits = 11
-        self.n_instruction_pointer_bits = 17  # TODO change
+        self.n_instruction_pointer_bits = 17
         self.n_op_bits = 10
         self.n_phase_bits = 45
         self.n_accum_bits = 45
@@ -61,7 +61,7 @@ class PCDDSChannel(InstrumentChannel):
         self.f_max = 200e6
         self.fpga_port = self.id
 
-        self.pulse_timing_offset = 14  # Offset for auto-advancing of pulses
+        self.pulse_timing_offset = 18  # Offset for auto-advancing of pulses
 
         self.add_parameter(
             'output_enable',
