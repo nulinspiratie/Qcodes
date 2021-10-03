@@ -1,5 +1,5 @@
 from .SD_Module import *
-
+from datetime import datetime
 
 class SD_FPGA(SD_Module):
     """
@@ -22,6 +22,12 @@ class SD_FPGA(SD_Module):
         else:
             raise Exception('No FPGA found at '
                             'chassis {}, slot {}'.format(chassis, slot))
+
+        self.log_instructions = False
+
+        # Raw instructions sent to the FPGA
+        self._sent_instructions = []
+        self._received_instructions = []
 
     def start(self):
         """ Starts the currently loaded FPGA firmware. """
@@ -57,6 +63,16 @@ class SD_FPGA(SD_Module):
         data = self.SD_module.FPGAreadPCport(port, data_size, address, address_mode,
                                              access_mode)
         value_name = 'data at PCport {}'.format(port)
+        values = {
+            'PCport': port,
+            'data': [hex(elem) for elem in data],
+            'address': address,
+            'address_mode': address_mode,
+            'access_mode': access_mode,
+            'timestamp': datetime.now()
+        }
+        if self.log_instructions:
+            self._received_instructions.append(values)
         return result_parser(data, value_name, verbose)
 
     def set_fpga_pc_port(self, port, data, address, address_mode, access_mode,
@@ -73,6 +89,15 @@ class SD_FPGA(SD_Module):
         """
         result = self.SD_module.FPGAwritePCport(port, data, address, address_mode,
                                                 access_mode)
-        value_name = 'set fpga PCport {} to data:{}, address:{}, address_mode:{}, access_mode:{}' \
-            .format(port, data, address, address_mode, access_mode)
+        values = {
+            'PCport': port,
+            'data': [hex(elem) for elem in data],
+            'address': address,
+            'address_mode': address_mode,
+            'access_mode': access_mode,
+            'timestamp': datetime.now()
+        }
+        if self.log_instructions:
+            self._sent_instructions.append(values)
+        value_name = 'set fpga ' + ','.join(f"{key}: {val}" for key, val in values.items())
         return result_parser(result, value_name, verbose)

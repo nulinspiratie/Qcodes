@@ -50,7 +50,7 @@ class PCDDSChannel(InstrumentChannel):
         self.fpga = self._parent.fpga
         self.id = id
         self.n_pulse_pointer_bits = 11
-        self.n_instruction_pointer_bits = 17  # TODO change
+        self.n_instruction_pointer_bits = 17
         self.n_op_bits = 10
         self.n_phase_bits = 45
         self.n_accum_bits = 45
@@ -61,7 +61,7 @@ class PCDDSChannel(InstrumentChannel):
         self.f_max = 200e6
         self.fpga_port = self.id
 
-        self.pulse_timing_offset = 14  # Offset for auto-advancing of pulses
+        self.pulse_timing_offset = 18  # Offset for auto-advancing of pulses
 
         self.add_parameter(
             'output_enable',
@@ -155,22 +155,26 @@ class PCDDSChannel(InstrumentChannel):
         instr = self.construct_instruction(operation, 0)
         self.fpga.set_fpga_pc_port(self.fpga_port, [instr], self.id, 0, 1)
 
-    def construct_instruction(self, operation: int, pointer: int) -> int:
+    def construct_instruction(self, operation: int, pointer: int, max_value: int = None) -> int:
         """
         Function to construct the int instruction packet from the operation and
         pointer
         Args:
             operation: Operation that we want to do
             pointer: ID of the pulse that this instruction refers to
+            max_value: Maximum pointer value, used to ensure it remains within bounds
+                default is 2**self.n_pulse_pointer_bits
 
         Returns: Instruction
 
         """
         # TODO should be separate for pulse and instruction memory
         # Check that the pointer is in the allowed range
-        assert pointer < 2**self.n_pulse_pointer_bits, \
+        if max_value is None:
+            max_value = 2 ** self.n_pulse_pointer_bits
+        assert pointer < max_value, \
             f'Pointer with value {pointer} is outside of bounds ' \
-            f'[0, {2 ** self.n_pulse_pointer_bits - 1}]'
+            f'[0, {max_value - 1}]'
         # Convert and return
         return (operation << 22) + pointer
 
@@ -489,7 +493,7 @@ class PCDDSChannel(InstrumentChannel):
         operation = int('0000000010', 2)
         if update:
             operation += int('1000000000', 2)
-        instr = self.construct_instruction(operation, pulse)
+        instr = self.construct_instruction(operation, pulse, max_value=2**self.n_instruction_pointer_bits)
         self.fpga.set_fpga_pc_port(self.fpga_port, [instr], self.id, 0, 1)
 
     def send_trigger(self):
