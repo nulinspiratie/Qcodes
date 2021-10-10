@@ -77,7 +77,7 @@ class AWGChannel(InstrumentChannel):
                            val_mapping={'one-shot': 0, 'cyclic': 1})
 
         # Function generator parameters
-        self.add_parameter(f'frequency',
+        self.add_parameter('frequency',
                            label=f'{self.name} frequency',
                            unit='Hz',
                            set_function=self.awg.channelFrequency,
@@ -85,7 +85,7 @@ class AWGChannel(InstrumentChannel):
                                      f'for the function generator (wave_shape '
                                      f'is not arbitrary).',
                            vals=vals.Numbers(0, 200e6))
-        self.add_parameter(f'phase',
+        self.add_parameter('phase',
                            label=f'{self.name} phase',
                            unit='deg',
                            set_function=self.awg.channelPhase,
@@ -93,7 +93,7 @@ class AWGChannel(InstrumentChannel):
                                      f'for the function generator (wave_shape '
                                      f'is not arbitrary).',
                            vals=vals.Numbers(0, 360))
-        self.add_parameter(f'IQ',
+        self.add_parameter('IQ',
                            label=f'{self.name} IQ modulation',
                            val_mapping={'on': 1, 'off': 0},
                            set_function=self.awg.modulationIQconfig,
@@ -101,7 +101,7 @@ class AWGChannel(InstrumentChannel):
                                      f'{self.name}. If enabled, IQ modulation '
                                      f'will be applied to the function '
                                      f'generator signal using the AWG.')
-        self.add_parameter(f'angle_modulation',
+        self.add_parameter('angle_modulation',
                            label=f'{self.name} angle modulation',
                            val_mapping={'none': 0, 'frequency': 1, 'phase': 2},
                            set_function=self.awg.modulationAngleConfig,
@@ -109,14 +109,14 @@ class AWGChannel(InstrumentChannel):
                            docstring=f'Type of modulation to use for the '
                                      f'function generator. Can be frequency or '
                                      f'phase.')
-        self.add_parameter(f'deviation_gain',
+        self.add_parameter('deviation_gain',
                            label=f'{self.name} angle modulation',
                            vals=vals.Numbers(),
                            set_function=self.awg.modulationAngleConfig,
                            initial_value=0,
                            set_args=['angle_modulation', 'deviation_gain'],
-                           docstring=f'Function generator modulation gain.'
-                                     f'To be used with angle_modulation')
+                           docstring='Function generator modulation gain.'
+                                     'To be used with angle_modulation')
 
     @with_error_check
     def config_angle_modulation(self,
@@ -424,7 +424,7 @@ class SD_AWG(SD_Module):
                            vals=vals.Enum(0, 1))
 
         self.add_parameter('trigger_direction',
-                           label=f'trigger direction',
+                           label='trigger direction',
                            val_mapping={'in': 1, 'out': 0},
                            set_function=self.awg.triggerIOconfig,
                            docstring='Determines if trig i/o should be used '
