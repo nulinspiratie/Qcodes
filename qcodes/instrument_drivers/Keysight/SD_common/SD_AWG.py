@@ -702,7 +702,7 @@ class SD_AWG(SD_Module):
         provided it is configured with VI/HVI Trigger.
 
         Args:
-            channels: List of chnanels to trigger
+            channels: List of channels to trigger
         """
         # AWG channel mask, where LSB is for ch0, bit 1 is for ch1 etc.
         if not self.zero_based_channels:
