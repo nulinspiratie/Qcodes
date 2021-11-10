@@ -52,6 +52,46 @@ class NumpyJSONEncoder(json.JSONEncoder):
             return s
 
 
+def get_engineering_scale(val: float, unit: str = None):
+    """
+
+    Args:
+        val: The floating-point value to scale.
+        unit: Optional unit of measurement, if provided the unit will be
+              returned with the engineering prefix.
+              If not provided, only the prefix is returned.
+    Returns:
+        scale, new_unit
+
+    """
+
+    # allow values up to a <1000. i.e. nV is used up to 1000 nV
+    prefixes = ['a', 'f', 'p', 'n', 'μ', 'm', '', 'k', 'M',
+                'G', 'T', 'P', 'E']
+    thresholds = [10 ** (-3 * 5 + 3 * n) for n in
+                  range(len(prefixes))]
+    scales = [10 ** (3 * 6 - 3 * n) for n in
+              range(len(prefixes))]
+
+    scale = 1
+    for prefix, threshold, trialscale in zip(prefixes, thresholds, scales):
+        if val < threshold:
+            scale = trialscale
+            new_prefix = prefix
+            break
+
+    # special case the largest
+    if val > thresholds[-1]:
+        scale = scales[-1]
+        new_prefix = prefixes[-1]
+
+    if unit is not None:
+        new_unit = new_prefix + unit
+    else:
+        new_unit = new_prefix
+
+    return scale, new_unit
+
 def tprint(string, dt=1, tag='default'):
     """ Print progress of a loop every dt seconds """
     ptime = _tprint_times.get(tag, 0)

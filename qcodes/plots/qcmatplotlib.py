@@ -22,6 +22,7 @@ from .base import BasePlot
 from qcodes.utils.threading import UpdaterThread
 import qcodes.config
 from qcodes.data.data_array import DataArray
+from qcodes.utils.helpers import get_engineering_scale
 import numbers
 
 logger = logging.getLogger(__name__)
@@ -663,36 +664,16 @@ class MatPlot(BasePlot):
                     unit = trace['config'][axis].unit
                     label = trace['config'][axis].label
                     maxval = np.nanmax(abs(trace['config'][axis].ndarray))
-                    units_to_scale = self.standardunits
 
-                    # allow values up to a <1000. i.e. nV is used up to 1000 nV
-                    prefixes = ['a', 'f', 'p', 'n', 'μ', 'm', '', 'k', 'M',
-                                'G', 'T', 'P', 'E']
-                    thresholds = [10 ** (-3 * 5 + 3 * n) for n in
-                                  range(len(prefixes))]
-                    scales = [10 ** (3 * 6 - 3 * n) for n in
-                              range(len(prefixes))]
+                    units_to_scale = self.standardunits
 
                     if unit in units_to_scale:
                         if unit == 'Ohm':
                             unit = 'Ω'
-
-                        scale = 1
-                        new_unit = unit
                         # Don't scale the units for a log-plot
                         if not log_scale:
-                            for prefix, threshold, trialscale in zip(prefixes,
-                                                                     thresholds,
-                                                                     scales):
-                                if maxval < threshold:
-                                    scale = trialscale
-                                    new_unit = prefix + unit
-                                    break
-
-                            # special case the largest
-                            if maxval > thresholds[-1]:
-                                scale = scales[-1]
-                                new_unit = prefixes[-1] + unit
+                            scale, new_unit = get_engineering_scale(
+                                np.nanmax(abs(trace['config'][axis])), unit=unit)
 
                         if log_scale:
                             tx = ticker.LogFormatterMathtext()

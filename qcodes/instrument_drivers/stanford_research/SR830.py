@@ -15,11 +15,11 @@ class ChannelBuffer(ArrayParameter):
     The instrument natively supports this in its TRCL call.
     """
 
-    def __init__(self, name: str, instrument: 'SR830', channel: int):
+    def __init__(self, name: str, parent: 'SR830', channel: int):
         """
         Args:
             name (str): The name of the parameter
-            instrument (SR830): The parent instrument
+            parent (SR830): The parent instrument
             channel (int): The relevant channel (1 or 2). The name should
                 should match this.
         """
@@ -29,7 +29,7 @@ class ChannelBuffer(ArrayParameter):
             raise ValueError('Invalid channel specifier. SR830 only has '
                              'channels 1 and 2.')
 
-        if not isinstance(instrument, SR830):
+        if not isinstance(parent, SR830):
             raise ValueError('Invalid parent instrument. ChannelBuffer '
                              'can only live on an SR830.')
 
@@ -43,7 +43,7 @@ class ChannelBuffer(ArrayParameter):
                                    'data buffer of one channel.')
 
         self.channel = channel
-        self._instrument = instrument
+        self._instrument = parent
 
     def prepare_buffer_readout(self):
         """

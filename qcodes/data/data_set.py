@@ -715,19 +715,19 @@ class DataSet(DelegateAttributes):
             if 'data_groups' not in self.metadata:
                 warn('Metadata does not contain data groups')
             else:
-                valid_idxs = [
+                group_idxs = [
                     tuple(key) for key, val in self.metadata['data_groups']
-                    if data_group in val
+                    if data_group == val
                 ]
-                if not valid_idxs:
+                if not group_idxs:
                     warn(f'Data group {data_group} not found in metadata')
                 else:
                     filtered_arrays = []
-                    for valid_idx in valid_idxs:
+                    for valid_idxs in group_idxs:
                         for arr in arrays:
                             if arr in filtered_arrays:
                                 continue
-                            elif arr.action_indices[:len(valid_idx)] == valid_idx:
+                            elif arr.action_indices[:len(valid_idxs)] == valid_idxs:
                                 filtered_arrays.append(arr)
                     arrays = filtered_arrays
 
