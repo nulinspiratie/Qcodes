@@ -239,74 +239,81 @@ class Triggered_Controller(AcquisitionController):
             self.analog_trigger_edge(self.analog_trigger_edge())
             self.analog_trigger_threshold(self.analog_trigger_threshold())
 
-    def acquire(self):
+    def acquire(self, silent=True):
+        from time import time
+        import numpy as np
+        import logging
         # Initialize record of acquisition times
-        self.acquisition_times = [[] for ch in self.channel_selection()]
+        self.acquisition_times = [[] for _ in self.channel_selection()]
         self.last_acquisition_time = time()
 
-        self.buffers = {ch: np.zeros((self.traces_per_acquisition(),
-                                      self.samples_per_trace()))
-                        for ch in self.channel_selection()}
+        remaining_trace_points = {
+            ch.id: self.traces_per_acquisition() * self.samples_per_trace()
+            for ch in self.active_channels
+        }
+        channel_data = {channel.id: [] for channel in self.active_channels}
 
-        # We loop over channels first, even though it would make more sense to
-        # First loop over read iteration. The latter method gave two issues:
-        # scrambling of data between channels, and only getting data after
-        # timeout interval passed, resulting in very slow acquisitions.
-        for k, channel in enumerate(self.active_channels):
-            ch = channel.id
-            acquired_traces = 0
-            while acquired_traces < self.traces_per_acquisition():
-                traces_to_get = min(self.traces_per_read(),
-                                    self.traces_per_acquisition() - acquired_traces)
+        t0 = time()
+        while time() - t0 < self.timeout():
+            if not remaining_trace_points:
+                break
+            for k, channel in enumerate(self.active_channels):
+                if channel.id not in remaining_trace_points:
+                    continue
 
-                samples_to_get = traces_to_get * self.samples_per_trace()
+                trace_points_to_get = min(
+                    self.traces_per_read() * self.samples_per_trace(),
+                    remaining_trace_points[channel.id]
+                )
                 # We need an even number of samples per read
-                samples_to_get_even = samples_to_get + samples_to_get % 2
+                trace_points_to_get = trace_points_to_get + trace_points_to_get % 2
+                channel.n_points(trace_points_to_get)
 
-                channel.n_points(samples_to_get_even)
-                logger.debug(f'Acquiring {samples_to_get} points from DAQ{ch}.')
+                if not silent:
+                    print(
+                        f'ch{channel.id} Acquiring {trace_points_to_get} points of total {remaining_trace_points[channel.id]}',
+                        end='.')
+                    t0 = time()
 
-                t0 = time()
+                channel_read_points = channel.read()
+                if not silent:
+                    print(f' Time taken: {(time() - t0) * 1e3:.2f} ms')
+                if len(channel_read_points):
+                    assert len(
+                        channel_read_points) <= trace_points_to_get, 'For some reason got more samples than requested.'
+                    channel_data[channel.id].append(channel_read_points)
 
-                channel_data = []
-                while time() - t0 < self.timeout():
-                    channel_data_read = channel.read()
-                    if len(channel_data_read):
-                        channel_data = np.append(channel_data, channel_data_read)
-                        # adjust next number of acquisition points
-                        channel.n_points(samples_to_get_even - len(channel_data))
-                        assert len(channel_data) <= samples_to_get_even, 'For some reason got more samples than requested.'
-                        if len(channel_data) == samples_to_get_even:
-                            break
-                        # assert len(channel_data) == samples_to_get_even, 'For some reason did not get the right number of samples.' \
-                        #                                                  'Try increasing the timeout interval.'
-
-                    else:
-                        logger.warning('No data acquired within timeout interval.'
-                                       ' SD_DIG.minimum_timeout_interval should'
-                                       ' be increased.')
+                    # adjust next number of acquisition points
+                    remaining_trace_points[channel.id] -= len(channel_read_points)
+                    if remaining_trace_points[channel.id] <= 0:
+                        remaining_trace_points.pop(channel.id)
                 else:
-                    raise RuntimeError(f'Failed to acquire {samples_to_get_even} samples, '
-                                       f'got {len(channel_data)} on ch{ch}. '
-                                       f'Timeout {self.timeout():.3f}s')
+                    logger.warning('No data acquired within timeout interval.'
+                                   ' SD_DIG.minimum_timeout_interval should'
+                                   ' be increased. Trying again until timeout '
+                                   f'{self.timeout()} s')
 
-                channel_data = np.array(channel_data)
+        else:
+            raise RuntimeError(f'Failed to acquire all trace samples. '
+                               f'Remaining trace points: {remaining_trace_points}. '
+                               f'Timeout {self.timeout():.3f}s')
 
-                # Record acquisition time
-                self.acquisition_times[k].append(time() - self.last_acquisition_time)
-                self.last_acquisition_time = time()
+        # Record acquisition time
+        self.acquisition_times[k].append(time() - t0)
 
-                if samples_to_get % 2:
-                    # Remove final point needed to make samples per read even
-                    channel_data = channel_data[:-1]
-                # Segment read data to 2D array of traces
-                read_traces = channel_data.reshape((traces_to_get,
-                                                    self.samples_per_trace()))
-                self.buffers[ch][acquired_traces:acquired_traces+traces_to_get] = read_traces
+        self.buffers = {}
+        for ch, trace_elems in channel_data.items():
+            # Combine individual read traces into single 1D trace
+            traces_1D = np.concatenate(trace_elems)
 
-                acquired_traces += traces_to_get
+            if len(traces_1D) % 2:
+                # Remove final point needed to make samples per read even
+                traces_1D = traces_1D[:-1]
 
-        return self.buffers
+            # Segment 1D traces into 2D shape
+            self.buffers[ch] = np.reshape(traces_1D, (self.traces_per_acquisition(), self.samples_per_trace()))
+
+        return channel_data
 
     def start(self):
         self.digitizer.start_channels(self.channel_selection())
