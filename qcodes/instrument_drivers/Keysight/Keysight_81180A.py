@@ -465,7 +465,7 @@ class AWGChannel(InstrumentChannel):
 
         super().add_parameter(name, parameter_class=parameter_class, **kwargs)
 
-    def upload_waveform(self, waveform, segment_number=None):
+    def upload_waveform(self, waveform, segment_number=None, markers=(False, False)):
         if segment_number is None:
             segment_number = len(self.uploaded_waveforms()) + 1
 
@@ -508,6 +508,14 @@ class AWGChannel(InstrumentChannel):
         # Add stop bytes (set 15th bit of last 32 words to 1)
         waveform_12bit[-32:] += 2 ** 14
 
+        # Convert tuple of bools to a 2 bit value
+        markers = markers[1] << 1 + markers[0]
+        # Clear and set the marker 1 (12th bit) and marker 2 (13th bit) for a pulse
+        # N.B. Clearing the bits first ensures they are not inadvertently set elsewhere
+        waveform_12bit[:] &= ~(3 << 12)
+        waveform_12bit[:] |= markers * (2 ** 12)
+
+
         # Convert waveform to bytes (note that Endianness is important,
         # might not work on Mac/Linux)
         waveform_bytes = array.array("H", waveform_12bit).tobytes()
@@ -538,7 +546,7 @@ class AWGChannel(InstrumentChannel):
 
         return segment_number
 
-    def upload_waveforms(self, waveforms, append=False, allow_existing=False):
+    def upload_waveforms(self, waveforms, markers, append=False, allow_existing=False):
         """Uploade a list of waveforms
 
 
@@ -567,17 +575,17 @@ class AWGChannel(InstrumentChannel):
                     f'({self._parent.waveform_max_length}). Please set force=False'
                 )
             else:
-                for k, waveform in enumerate(waveforms, start=1):
+                for k, (waveform, marker) in enumerate(zip(waveforms, markers), start=1):
                     idx = len(self.uploaded_waveforms()) + 1  # 1-based indexing
                     waveform_idx_mapping[k] = idx
-                    self.upload_waveform(waveform, idx)
+                    self.upload_waveform(waveform, marker, idx)
         elif allow_existing:  # Only append new waveforms if not already existing
             if total_waveform_points > self._parent.waveform_max_length:
                 self.clear_waveforms()
-            for k, waveform in enumerate(waveforms, start=1):  # 1-based indexing
+            for k, (waveform, marker) in enumerate(zip(waveforms, markers), start=1):  # 1-based indexing
                 idx = arreqclose_in_list(waveform, self.uploaded_waveforms(), atol=1e-3)
                 if idx is None:
-                    idx = self.upload_waveform(waveform)
+                    idx = self.upload_waveform(waveform, marker)
                 else:
                     idx += 1  # 1-based indexing
                 waveform_idx_mapping[k] = idx
