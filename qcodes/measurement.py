@@ -102,6 +102,7 @@ class Measurement:
         self._masked_properties = []
 
         self.timings = PerformanceTimer()
+        self._last_measurement_time = perf_counter()
 
     def log(self, message: str, level="info"):
         """Send a log message
@@ -627,7 +628,8 @@ class Measurement:
         self._verify_action(action=parameter, name=name, add_if_new=True)
 
         # Get parameter result
-        result = parameter(**kwargs)
+        with self.timings.record(['measurement', self.action_indices, name]):
+            result = parameter(**kwargs)
 
         self._add_measurement_result(
             self.action_indices,
@@ -653,7 +655,7 @@ class Measurement:
         # Ensure measuring multi_parameter matches the current action_indices
         self._verify_action(action=multi_parameter, name=name, add_if_new=True)
 
-        with self.timings.record(['measurement', self.action_indices, 'get']):
+        with self.timings.record(['measurement', self.action_indices, name]):
             results_list = multi_parameter(**kwargs)
 
         results = dict(zip(multi_parameter.names, results_list))
@@ -698,7 +700,8 @@ class Measurement:
         # Record action_indices before the callable is called
         action_indices = self.action_indices
 
-        results = callable(**kwargs)
+        with self.timings.record(['measurement', self.action_indices, name]):
+            results = callable(**kwargs)
 
         # Check if the callable already performed a nested measurement
         # In this case, the nested measurement is stored as a data_group, and
@@ -812,6 +815,11 @@ class Measurement:
                 "in a different thread."
             )
 
+        self.timings._record_value(
+            ['measurement', self.action_indices, 'pre_msmt_time'],
+            perf_counter() - self._last_measurement_time
+        )
+
         if self != Measurement.running_measurement:
             # Since this Measurement is not the running measurement, it is a
             # DataGroup in the running measurement. Delegate measurement to the
@@ -851,11 +859,12 @@ class Measurement:
                 f"is not a dict, int, float, bool, or numpy array."
             )
 
-        self.timings.record(
+        self.timings._record_value(
             ['measurement', initial_action_indices, 'total'],
-            perf_counter() - t0
+            perf_counter() - self._last_measurement_time
         )
 
+        self._last_measurement_time = perf_counter()
         return result
 
     # Methods related to masking of parameters/attributes/keys
