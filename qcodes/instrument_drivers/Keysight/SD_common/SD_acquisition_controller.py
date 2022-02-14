@@ -252,9 +252,6 @@ class Triggered_Controller(AcquisitionController):
             self.analog_trigger_threshold(self.analog_trigger_threshold())
 
     def acquire(self, silent=True):
-        from time import time
-        import numpy as np
-        import logging
         # Initialize record of acquisition times
         self.acquisition_times = [[] for _ in self.channel_selection()]
         self.last_acquisition_time = time()
@@ -325,7 +322,7 @@ class Triggered_Controller(AcquisitionController):
             # Segment 1D traces into 2D shape
             self.buffers[ch] = np.reshape(traces_1D, (self.traces_per_acquisition(), self.samples_per_trace()))
 
-        return channel_data
+        return self.buffers
 
     def start(self):
         self.digitizer.start_channels(self.channel_selection())
