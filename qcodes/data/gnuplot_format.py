@@ -375,8 +375,8 @@ class GNUPlotFormat(Formatter):
         location = data_set.location
         fn = io_manager.join(location, self.metadata_file)
         if io_manager.list(fn):
-            with io_manager.open(fn, 'r') as snap_file:
-                metadata = json.load(snap_file, encoding='utf8')
+            with io_manager.open(fn, 'r', encoding='utf8') as snap_file:
+                metadata = json.load(snap_file)
             data_set.metadata.update(metadata)
 
     def _make_header(self, group):
