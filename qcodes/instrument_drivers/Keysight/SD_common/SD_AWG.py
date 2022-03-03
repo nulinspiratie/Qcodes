@@ -8,6 +8,7 @@ from qcodes.instrument.channel import InstrumentChannel, ChannelList
 from qcodes import validators as vals
 from .SD_DIG import logclass
 model_channel_idxs = {'M3201A': [k+1 for k in range(4)],
+                      'M3202A': [k+1 for k in range(4)],
                       'M3300A': [k+1 for k in range(4)],
                       'M3201A_legacy': [k for k in range(4)],
                       'M3300A_legacy': [k for k in range(4)],
@@ -443,6 +444,13 @@ class SD_AWG(SD_Module):
                            unit='Hz',
                            get_function=self.awg.clockGetSyncFrequency,
                            docstring='The frequency of the internal CLKsync in Hz')
+
+        if model == 'M3202A':
+            self._max_sample_rate = int(1e9)
+            # self.clock_frequency(200e6)
+        else:
+            self._max_sample_rate = int(500e6)
+            # self.clock_frequency(100e6)
 
         channels = ChannelList(self,
                                name='channels',
