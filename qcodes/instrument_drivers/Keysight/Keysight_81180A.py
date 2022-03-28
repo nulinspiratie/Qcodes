@@ -4,6 +4,7 @@ from time import sleep, time
 import logging
 import pyvisa as visa
 import struct
+import numpy as np
 
 from qcodes import (
     VisaInstrument,
@@ -480,8 +481,8 @@ class AWGChannel(InstrumentChannel):
             ), "In DAC run mode, waveform voltage cannot exceed +-0.5V"
         else:
             assert (
-                max(abs(waveform)) <= 2
-            ), "In DC/AC run mode, waveform voltage cannot exceed +-2V"
+                max(abs(waveform)) <= 1
+            ), "In DC/AC run mode, waveform voltage cannot exceed +-1V"
 
         # Set active channel to current channel if necessary
         if self._parent.active_channel.get_latest() != self.id:
@@ -500,9 +501,12 @@ class AWGChannel(InstrumentChannel):
         # Convert waveform to 12bit (min = 0, max = 2**12 - 1)
         if self.output_coupling.get_latest() == "DAC":
             # Voltage limits are +- 0.5V.
-            waveform_12bit = (2 ** 11 - 1) + (2 ** 12 - 1) * waveform
+            waveform_12bit = 2 ** 11 + (2 ** 12 - 1) * waveform
         else:
-            waveform_12bit = (2 ** 11 - 1) + (2 ** 10 - 1) * waveform
+            # The output waveform of the Keysight 81180A is limited by 2Vpp,
+            # hence max waveform amplitude is 1V. Also 0V corresponds to 2048, -1V -> 0, +1V -> 4095.
+            waveform_12bit = np.array([(2 ** 11 + (2 ** 11 - 1) * waveform_point) if (waveform_point >= 0)
+                                       else (2 ** 11 + 2 ** 11 * waveform_point) for waveform_point in waveform])
         waveform_12bit = waveform_12bit.astype("int")
 
         # Add stop bytes (set 15th bit of last 32 words to 1)
