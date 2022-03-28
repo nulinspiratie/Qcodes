@@ -1170,9 +1170,45 @@ class Measurement:
         else:
             self.measurement_thread.traceback()
 
+
 def running_measurement() -> Measurement:
     """Return the running measurement"""
     return Measurement.running_measurement
+
+
+class DummyMeasurement(Measurement):
+    def __init__(self, name=None, **kwargs):
+        if name is None:
+            name = 'dummy'
+        super().__init__(name=name, **kwargs)
+
+    def measure(
+        self,
+        measurable,
+        name=None,
+        *,  # Everything after here must be a kwarg
+        label=None,
+        unit=None,
+        **kwargs
+    ):
+        if isinstance(measurable, Parameter):
+            return measurable()
+        elif isinstance(measurable, MultiParameter):
+            return measurable()
+        elif callable(measurable):
+            return measurable()
+        elif isinstance(measurable, dict):
+            return measurable
+        elif isinstance(measurable, RAW_VALUE_TYPES):
+            return measurable
+        else:
+            raise RuntimeError(
+                f"Cannot measure {measurable} as it cannot be called, and it "
+                f"is not a dict, int, float, bool, or numpy array."
+            )
+
+    def __enter__(self):
+        raise RuntimeError("Cannot perform 'with Measurement()' on a DummyMeasurement")
 
 
 class Sweep:
