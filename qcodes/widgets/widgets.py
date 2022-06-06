@@ -5,6 +5,7 @@ import os
 import time
 from IPython.display import display
 from ipywidgets.widgets import *
+from ipywidgets import link
 from datetime import datetime
 from traitlets import Unicode, Bool
 
@@ -258,3 +259,55 @@ class LoopManagerWidget(DOMWidget):
             msmt = qc.active_measurement()
             if msmt is not None:
                 msmt.notify = properties["new"]
+
+
+class ParameterManagerWidget(DOMWidget):
+    def __init__(self, parameters, interval=1):
+        super().__init__()
+        self.parameters = parameters
+
+        self.widgets = self.create_widgets()
+        self.widget = self.widgets["vbox"]
+
+        self.updater = UpdaterThread(self.update_widget, interval=interval)
+
+    def create_widgets(self):
+        # max_name_length = max([len(p.name) for p in self.parameters])
+        widgets = {}
+        widgets['checkbox'] = Checkbox()
+        widgets['checkbox'].description = 'Lock input'
+        widgets['checkbox'].value = True
+        widgets['values'] = []
+        for p in self.parameters:
+            bft = BoundedFloatText(p.get_latest())
+            bft.disabled = widgets['checkbox'].value
+            if p.vals is not None:
+                bft.min = p.vals._min_value
+                bft.max = p.vals._max_value
+            bft.step = p.step
+            bft.description = p.name
+            bft._parameter = p
+
+            # Add link to update parameter when value entered
+            bft.observe(self._handle_text_input, names='value')
+            link((widgets['checkbox'], 'value'), (bft, 'disabled'))
+            widgets['values'].append(bft)
+
+        widgets['vbox'] = VBox([widgets['checkbox'], *widgets['values']])
+        return widgets
+
+    def _handle_text_input(self, change):
+        print(change.owner)
+        print(change.old, '->', change.new)
+        change.owner._parameter(change.new)
+
+    def display(self):
+        display(self.widget)
+
+
+    def update_widget(self):
+        for (p, bft) in zip(self.parameters, self.widgets['values']):
+            try:
+                bft.value = float(p.get_latest())
+            except TypeError:
+                bft.value = float(p())
