@@ -14,7 +14,8 @@ class SD_FPGA(SD_Module):
         # Open the device, using the specified chassis and slot number
         FPGA_name = self.SD_module.getProductNameBySlot(chassis, slot) + '_FPGA'
         if isinstance(FPGA_name, str):
-            result_code = self.SD_module.openWithSlot(FPGA_name, chassis, slot)
+            result_code = self.SD_module.openWithSlotCompatibility(FPGA_name, chassis, slot, compatibility=1
+                                                                   )
             if result_code <= 0:
                 raise Exception('Could not open FPGA '
                                 'error code {}'.format(result_code))

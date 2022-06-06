@@ -193,11 +193,11 @@ class SD_Module(Instrument):
         # Open the device, using the specified chassis and slot number
         module_name = self.SD_module.getProductNameBySlot(chassis, slot)
         if isinstance(module_name, str):
-            result_code = self.SD_module.openWithSlot(module_name, chassis, slot)
+            result_code = self.SD_module.openWithSlotCompatibility(module_name, chassis, slot, compatibility=1)
             if result_code <= 0:
-                raise Exception('Could not open SD_Module error code {result_code}')
+                raise Exception(f'Could not open SD_Module error code {result_code}')
         else:
-            raise Exception('No SD Module found at chassis {chassis}, slot {slot}')
+            raise Exception(f'Found {module_name} at chassis {chassis}, slot {slot} instead of SD module')
 
         for i in range(triggers):
             self.add_parameter('pxi_trigger_number_{}'.format(i),
