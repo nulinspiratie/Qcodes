@@ -1083,6 +1083,7 @@ class MeasurementLoop:
         unit: Optional[str] = None,
         setpoints: Optional[Union['Sweep', Sequence]] = None,
         timestamp: bool = False,
+        thread=False,
         **kwargs,
     ) -> Any:
         """Perform a single measurement of a Parameter, function, etc.
@@ -1129,6 +1130,23 @@ class MeasurementLoop:
             return MeasurementLoop.running_measurement.measure(
                 measurable, name=name, label=label, unit=unit, **kwargs
             )
+
+        # Store any previously threaded datapoints
+        for threaded_result in self._threaded_results: # TODO
+            if threaded_result["finished"]:
+                self.store_threaded_result(threaded_result)  # TODO
+
+        if thread:
+            self.measure_in_thread(  # TODO
+                measurable=measurable,
+                name=name,
+                label=label,
+                unit=unit,
+                setpoints=setpoints,
+                timestamp=timestamp,
+            )
+            return
+
 
         # Code from hereon is only reached by the primary measurement,
         # i.e. the running_measurement
@@ -1207,6 +1225,23 @@ class MeasurementLoop:
         )
 
         return result
+
+    # Methods related to threading
+    def _measure_in_thread(
+        self,
+        measurable: Union[
+            Parameter, Callable, dict, float, int, bool, np.ndarray, None
+        ],
+        name: Optional[str] = None,
+        *,  # Everything after here must be a kwarg
+        label: Optional[str] = None,
+        unit: Optional[str] = None,
+        setpoints: Optional[Union['Sweep', Sequence]] = None,
+        timestamp: bool = False,
+        thread=False,
+        **kwargs,
+    ) -> Any:
+        pass
 
     # Methods related to masking of parameters/attributes/keys
     def _mask_attr(self, obj: object, attr: str, value) -> Any:
